@@ -11,7 +11,7 @@ say plainly why there is no model. No 3D canvas, so they need no mesh and no cam
 
 Usage:  python shape/build_lc_pages.py
 """
-import json, os, re, sys
+import hashlib, json, os, re, sys
 import numpy as np
 import pandas as pd
 
@@ -40,6 +40,17 @@ DEFAULT_WHY = 'Shape inversion did not converge on a usable model for this objec
 
 def sn(d):
     return re.sub(r'[^A-Za-z0-9]+', '_', str(d)).strip('_')
+
+
+def _asset_v(name):
+    """Content hash for a shared asset, so a cached copy is never served
+    against a newer page. Assets carry a short TTL, which is long enough for a
+    stale stylesheet to look like a missing feature."""
+    p = os.path.join(ROOT, "assets", name)
+    try:
+        return hashlib.sha1(open(p, "rb").read()).hexdigest()[:8]
+    except OSError:
+        return "0"
 
 
 def stat(label, value):
@@ -117,7 +128,7 @@ def main():
         html = f'''<!doctype html><meta charset="utf-8">
 <title>{t.designation} — TESSELLATE asteroid catalog</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="../assets/viewer.css">
+<link rel="stylesheet" href="../assets/viewer.css?v={_asset_v("viewer.css")}">
 <div class="lconly">
   <a class="home" href="../index.html">&larr; Catalog</a>
   <p class="eyebrow">TESSELLATE rotation period</p>
@@ -136,7 +147,7 @@ def main():
   </div>
 </div>
 <script>window.LCONLY={json.dumps({'lc': f'../data/lightcurves/{t.key}.json'}, separators=(',', ':'))};</script>
-<script src="../assets/lconly.js"></script>
+<script src="../assets/lconly.js?v={_asset_v("lconly.js")}"></script>
 '''
         open(f'{ROOT}/asteroid/{t.key}.html', 'w').write(html)
         n += 1

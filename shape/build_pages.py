@@ -20,7 +20,7 @@ Usage:
     python shape/build_pages.py shapes_in/            # all JSONs in a directory
     python shape/build_pages.py shapes_in/ --limit 500
 """
-import argparse, glob, json, os, sys
+import argparse, glob, hashlib, json, os, sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -80,6 +80,17 @@ def symmetry_cell(p):
     m = (1.0 - oe) / (1.0 + oe)
     lab = 'monomodal' if m < -0.138 else ('symmetric' if m >= 0.600 else 'asymmetric')
     return f'{m:+.2f} <span class="sym-note">({lab})</span>'
+
+
+def _asset_v(name):
+    """Content hash for a shared asset, so a cached copy is never served
+    against a newer page. Assets carry a short TTL, which is long enough for a
+    stale stylesheet to look like a missing feature."""
+    p = os.path.join(ROOT, "assets", name)
+    try:
+        return hashlib.sha1(open(p, "rb").read()).hexdigest()[:8]
+    except OSError:
+        return "0"
 
 
 def stat(label, value):
@@ -147,7 +158,7 @@ def build(path, phys, cams):
     html = f'''<!doctype html><meta charset="utf-8">
 <title>{s['designation']} — TESSELLATE asteroid catalog</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="../assets/viewer.css">
+<link rel="stylesheet" href="../assets/viewer.css?v={_asset_v("viewer.css")}">
 <canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid {s['designation']}"></canvas>
 <div class="panel info">
   <a class="home" href="../index.html">&larr; Catalog</a>
@@ -181,7 +192,7 @@ def build(path, phys, cams):
   <canvas id="lc" aria-label="Phase-folded lightcurve with a marker tracking the rotation"></canvas>
 </div>
 <script>window.AST={json.dumps(meta, separators=(',', ':'))};</script>
-<script src="../assets/viewer.js"></script>
+<script src="../assets/viewer.js?v={_asset_v("viewer.js")}"></script>
 '''
     open(f'{ROOT}/asteroid/{key}.html', 'w').write(html)
     return key
