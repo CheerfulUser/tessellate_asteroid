@@ -21,6 +21,14 @@
     border-radius:9px;padding:10px}
   .figs img{width:100%;height:auto;border-radius:5px;display:block;background:#fff}
   .figs figcaption{font-size:11.5px;color:var(--text-dim);margin-top:7px;line-height:1.45}
+  .searchrow{display:flex;gap:10px;align-items:stretch}
+  .searchrow #q{flex:1;min-width:0}
+  #rand{flex:0 0 auto;padding:0 16px;font-family:inherit;font-size:13px;cursor:pointer;
+    color:var(--accent);background:#141a26;border:1px solid var(--panel-border);
+    border-radius:8px;white-space:nowrap}
+  #rand:hover{border-color:var(--accent);background:#18202e}
+  #rand:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (max-width:520px){ .searchrow{flex-wrap:wrap} #rand{width:100%;padding:10px 16px} }
   #q{width:100%;padding:11px 13px;font-size:14px;border-radius:8px;background:#141a26;
     border:1px solid var(--panel-border);color:var(--text);font-family:inherit}
   #q:focus{outline:none;border-color:var(--accent)}
@@ -75,9 +83,13 @@
   </div>
 
   <h2>Search the catalog</h2>
-  <p class="note">Type a name or number for a quick look. Shape-model pages exist for
-     16,427 objects so far and are linked; the rest are listed but not yet published.</p>
-  <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
+  <p class="note">Type a name or number for a quick look, or open one at random. Every object
+     has a page: 14,764 carry a convex shape model, and 1,663 have a period
+     and folded lightcurve but no model, each stating why.</p>
+  <div class="searchrow">
+    <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
+    <button id="rand" type="button" title="Open a random asteroid from the catalog">Random asteroid</button>
+  </div>
   <div id="hits"></div>
   <table><thead><tr>
     <th data-k="d" tabindex="0" role="button">Object</th>
@@ -187,6 +199,12 @@ document.querySelectorAll('th[data-k]').forEach(th=>{
   });
 });
 q.addEventListener('input',apply);
+// every object in the index has a page now, so any row is a valid target
+document.getElementById('rand').addEventListener('click',()=>{
+  if(!DATA.length) return;
+  const o = DATA[Math.floor(Math.random()*DATA.length)];
+  window.location.href = `asteroid/${o.k}.html`;
+});
 fetch(IDX_URL).then(r=>r.json()).then(j=>{
   DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));
   apply();
