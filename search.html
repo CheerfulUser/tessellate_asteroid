@@ -157,7 +157,7 @@ window.addEventListener('scroll',()=>{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
 });
-fetch('data/index.json?v=0fdb04f6').then(r=>r.json()).then(j=>{
+fetch('data/index.json?v=5a2dd8bd').then(r=>r.json()).then(j=>{
   DATA=j; apply();
 }).catch(()=>{hits.textContent='Could not load the catalog index';});
 </script>

@@ -56,3 +56,12 @@
 
 /* qualitative label beside the numeric symmetry index in the solution panel */
 .sym-note{opacity:.62;font-size:11px}
+
+/* Lightcurve-only pages: no 3D canvas, so the page is a single readable column rather than
+   the viewer's floating panels. Shares every other token with the full pages. */
+.lconly{max-width:640px;margin:0 auto;padding:30px 22px 70px;position:relative;
+  height:auto;overflow:visible}
+.lconly h1{font-size:22px;margin:0 0 10px}
+.lconly #lc{width:100%;height:220px;display:block;margin:6px 0 4px}
+.lconly .caveat{margin-top:18px}
+body:has(.lconly){overflow:auto;height:auto;position:static}
