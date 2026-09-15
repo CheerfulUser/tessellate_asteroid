@@ -60,10 +60,12 @@
   .tag.asymmetric{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}
   .tag.monomodal{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}
   td a:hover{text-decoration:underline}
-  /* every object links now; this marks the ones whose page has a lightcurve but no
-     shape model, so the table still shows the distinction the filter acts on */
-  td a.nomodel{color:var(--text-dim)}
-  td a.nomodel:hover{color:var(--accent)}
+  /* Every object links now. Marking the no-model rows by DIMMING them was a mistake: dim grey
+     was previously the not-a-link colour, so a working link looked dead. Keep the link colour
+     and carry the distinction in an explicit badge instead. */
+  .lcflag{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:9.5px;
+    letter-spacing:.04em;color:var(--text-faint);border:1px solid var(--panel-border);
+    vertical-align:1px}
   a.more{color:var(--accent);text-decoration:none;font-weight:600}
   a.more:hover{text-decoration:underline}
   .caveat{margin-top:30px;padding:13px 15px;border-radius:8px;background:#e0a4581a;
@@ -162,7 +164,7 @@ function render(list){
   }
   hits.textContent=`${list.length.toLocaleString()} of ${DATA.length.toLocaleString()} objects`+note;
   rows.innerHTML=list.slice(0,PREVIEW).map(o=>{
-    const name=`<a href="asteroid/${o.k}.html"${o.g?'':' class="nomodel"'}>${o.d}</a>`;
+    const name=`<a href="asteroid/${o.k}.html">${o.d}</a>`+(o.g?'':'<span class="lcflag" title="Lightcurve only &mdash; no shape model for this object">lc</span>');
     return `<tr><td>${name}</td><td>${fmt(o.p,4)}</td><td>${fmt(o.a,3)}</td>`+
            `<td>${fmt(o.s,1)}</td><td>${o.t||'&mdash;'}</td><td>${sym(o)}</td>`+
            `<td>${fmt(o.l,4)}</td></tr>`;
