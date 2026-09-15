@@ -119,6 +119,15 @@ html = f'''<!doctype html><meta charset="utf-8">
     font-variant-numeric:tabular-nums}}
   th{{text-align:right;padding:7px 9px;border-bottom:1px solid var(--panel-border);
     color:var(--text-faint);font-weight:500;font-size:11.5px;letter-spacing:.04em}}
+  /* sortable headers: the arrow is reserved space at all times so the row does not
+     reflow when sorting moves from one column to another */
+  th[data-k]{{cursor:pointer;user-select:none;white-space:nowrap}}
+  th[data-k]:hover,th[data-k]:focus-visible{{color:var(--text)}}
+  th[data-k]:focus-visible{{outline:2px solid var(--accent);outline-offset:-2px}}
+  th[data-k]::after{{content:'\\2195';margin-left:5px;opacity:.25;font-size:10px}}
+  th[aria-sort="ascending"]::after{{content:'\\2191';opacity:1;color:var(--accent)}}
+  th[aria-sort="descending"]::after{{content:'\\2193';opacity:1;color:var(--accent)}}
+  th[aria-sort]{{color:var(--text)}}
   td{{text-align:right;padding:7px 9px;border-bottom:1px solid var(--hairline)}}
   th:first-child,td:first-child{{text-align:left}}
   tbody tr:hover{{background:#161d2b}}
@@ -151,9 +160,14 @@ html = f'''<!doctype html><meta charset="utf-8">
      {S['pages']:,} objects so far and are linked; the rest are listed but not yet published.</p>
   <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
   <div id="hits"></div>
-  <table><thead><tr><th>Object</th><th>Period (hours)</th><th>Amplitude</th>
-    <th>Diameter (km)</th><th>Type</th><th>LCDB (hours)</th></tr></thead>
-    <tbody id="rows"></tbody></table>
+  <table><thead><tr>
+    <th data-k="d" tabindex="0" role="button">Object</th>
+    <th data-k="p" tabindex="0" role="button">Period (hours)</th>
+    <th data-k="a" tabindex="0" role="button">Amplitude</th>
+    <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
+    <th data-k="t" tabindex="0" role="button">Type</th>
+    <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
+  </tr></thead><tbody id="rows"></tbody></table>
   <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
      catalog &rarr;</a> &mdash; all {S['n']:,} objects, with filters and sorting.</p>
 
@@ -193,12 +207,17 @@ html = f'''<!doctype html><meta charset="utf-8">
 const IDX_URL='data/index.json';
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
       q=document.getElementById('q');
-let DATA=[];
+let DATA=[], sortKey=null, sortDir=1;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const PREVIEW=10;
+const LABEL={{d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',l:'LCDB period'}};
 function render(list){{
-  hits.textContent=`${{list.length.toLocaleString()}} of ${{DATA.length.toLocaleString()}} objects`
-    + (list.length>PREVIEW?` — showing ${{PREVIEW}}`:'');
+  let note='';
+  if(list.length>PREVIEW)
+    note = sortKey ? ` — showing the ${{PREVIEW}} ${{sortDir>0?'lowest':'highest'}} by `
+                     + LABEL[sortKey]
+                   : ` — showing ${{PREVIEW}}`;
+  hits.textContent=`${{list.length.toLocaleString()}} of ${{DATA.length.toLocaleString()}} objects`+note;
   rows.innerHTML=list.slice(0,PREVIEW).map(o=>{{
     const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`
                   :`<span class="nopage">${{o.d}}</span>`;
@@ -208,8 +227,36 @@ function render(list){{
 }}
 function apply(){{
   const s=q.value.trim().toLowerCase();
-  render(s?DATA.filter(o=>o.d.toLowerCase().includes(s)):DATA);
+  let L=s?DATA.filter(o=>o.d.toLowerCase().includes(s)):DATA;
+  // sort the whole matching set before trimming to PREVIEW, so "period ascending" means
+  // the fastest rotators in the catalog rather than a reshuffle of the same ten rows
+  if(sortKey){{
+    const k=sortKey;
+    L=L.slice().sort((x,y)=>{{
+      let a=x[k], b=y[k];
+      if(a==null&&b==null) return 0;
+      if(a==null) return 1;            // missing values always sort last
+      if(b==null) return -1;
+      if(typeof a==='string') return sortDir*a.localeCompare(b);
+      return sortDir*(a-b);
+    }});
+  }}
+  render(L);
 }}
+function sortBy(th){{
+  const k=th.dataset.k;
+  sortDir = (k===sortKey) ? -sortDir : 1;
+  sortKey = k;
+  document.querySelectorAll('th[data-k]').forEach(h=>h.removeAttribute('aria-sort'));
+  th.setAttribute('aria-sort', sortDir>0?'ascending':'descending');
+  apply();
+}}
+document.querySelectorAll('th[data-k]').forEach(th=>{{
+  th.addEventListener('click',()=>sortBy(th));
+  th.addEventListener('keydown',e=>{{
+    if(e.key==='Enter'||e.key===' '){{ e.preventDefault(); sortBy(th); }}
+  }});
+}});
 q.addEventListener('input',apply);
 fetch(IDX_URL).then(r=>r.json()).then(j=>{{
   DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));
@@ -256,6 +303,14 @@ search = f'''<!doctype html><meta charset="utf-8">
     letter-spacing:.04em;cursor:pointer;user-select:none;background:var(--bg);
     box-shadow:inset 0 -1px 0 var(--panel-border)}}
   th:hover{{color:var(--accent)}}
+  /* arrow space is always reserved, so switching the sorted column does not shift the header */
+  th[data-k]{{white-space:nowrap}}
+  th[data-k]:focus-visible{{outline:2px solid var(--accent);outline-offset:-2px;
+    color:var(--text)}}
+  th[data-k]::after{{content:'\\2195';margin-left:5px;opacity:.25;font-size:10px}}
+  th[aria-sort="ascending"]::after{{content:'\\2191';opacity:1;color:var(--accent)}}
+  th[aria-sort="descending"]::after{{content:'\\2193';opacity:1;color:var(--accent)}}
+  th[aria-sort]{{color:var(--text)}}
   td{{text-align:right;padding:6px 9px;border-bottom:1px solid var(--hairline)}}
   th:first-child,td:first-child{{text-align:left}}
   tbody tr:hover{{background:#161d2b}}
@@ -288,8 +343,12 @@ search = f'''<!doctype html><meta charset="utf-8">
     <div id="hits"></div>
   </div>
   <table><thead><tr>
-    <th data-k="d">Object</th><th data-k="p">Period (hours)</th><th data-k="a">Amplitude</th>
-    <th data-k="s">Diameter (km)</th><th data-k="t">Type</th><th data-k="l">LCDB (hours)</th>
+    <th data-k="d" tabindex="0" role="button" aria-sort="ascending">Object</th>
+    <th data-k="p" tabindex="0" role="button">Period (hours)</th>
+    <th data-k="a" tabindex="0" role="button">Amplitude</th>
+    <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
+    <th data-k="t" tabindex="0" role="button">Type</th>
+    <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
 </main>
 <script>
@@ -338,11 +397,21 @@ function apply(){{
 q.addEventListener('input',apply);
 for(const id of ['fpage','fnew','flong','ftype'])
   document.getElementById(id).addEventListener('change',apply);
-document.querySelectorAll('th[data-k]').forEach(th=>th.addEventListener('click',()=>{{
+function sortBy(th){{
   const k=th.dataset.k;
   sortDir = (k===sortKey) ? -sortDir : 1;
-  sortKey = k; apply();
-}}));
+  sortKey = k;
+  document.querySelectorAll('th[data-k]').forEach(h=>h.removeAttribute('aria-sort'));
+  th.setAttribute('aria-sort', sortDir>0?'ascending':'descending');
+  apply();
+  window.scrollTo({{top:0}});      // a re-sort with the list scrolled down is disorienting
+}}
+document.querySelectorAll('th[data-k]').forEach(th=>{{
+  th.addEventListener('click',()=>sortBy(th));
+  th.addEventListener('keydown',e=>{{
+    if(e.key==='Enter'||e.key===' '){{ e.preventDefault(); sortBy(th); }}
+  }});
+}});
 window.addEventListener('scroll',()=>{{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
