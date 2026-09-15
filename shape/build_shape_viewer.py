@@ -132,7 +132,12 @@ _Ry = np.array([[np.cos(_a), 0, -np.sin(_a)], [0, 1, 0], [np.sin(_a), 0, np.cos(
 _Rpf = _Ry @ _Rz
 _epf = (_Rpf @ _en.T).T.mean(axis=0); _epf /= np.linalg.norm(_epf)
 _spf = (_Rpf @ _sn.T).T.mean(axis=0); _spf /= np.linalg.norm(_spf)
-ASPECT = float(np.degrees(np.arccos(abs(_epf[2]))))
+# SIGNED aspect: arccos of the signed z-component, not its absolute value. Using abs() threw
+# away which hemisphere TESS observes from, and they are different geometries -- for all four
+# published objects the observer sits at NEGATIVE z (e_pf_z = -0.44 to -0.63), so an "aspect of
+# 53 deg" actually means 127 deg from the +z pole. That sign error made a facet at latitude
+# -84.8 deg look hidden when it is in fact the face pointing straight at TESS.
+ASPECT = float(np.degrees(np.arccos(np.clip(_epf[2], -1, 1))))
 
 # camera basis: +z toward the observer, +y the spin axis projected on screen (pole up)
 _zc = _epf
