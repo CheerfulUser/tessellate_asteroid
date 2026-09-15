@@ -131,12 +131,25 @@ function draw(){
   ctx.clearRect(0,0,w,h);
   const R = qMat(orient);
   const a = 2*Math.PI*phase, ca=Math.cos(a), sa=Math.sin(a);
-  const S = Math.min(w,h)*0.33*zoom/scale;
+  let S = Math.min(w,h)*0.33*zoom/scale;
   // Centre the body in the space ABOVE the control panel rather than in the whole canvas,
   // so it never clips the lightcurve. Measured from the panel each frame so it stays correct
   // when the window resizes or the panel reflows.
   const panelH = (document.querySelector('.ctrl')?.getBoundingClientRect().height || 0) + 28;
-  const cy = Math.max(S*0.9, (h - panelH)/2);
+  // On mobile the info panel is a bar ACROSS THE TOP, so the free space starts below it and
+  // centring on the full canvas puts the body too low. Detect that layout by the panel spanning
+  // the width -- the desktop panel is a narrow column and never does. Capped so an EXPANDED
+  // panel cannot shove the body off-screen.
+  let topOff = 0;
+  const infoEl = document.querySelector('.panel.info');
+  if(infoEl){
+    const ri = infoEl.getBoundingClientRect();
+    if(ri.width > w*0.8) topOff = Math.min(ri.bottom + 12, h*0.35);
+  }
+  const band = h - panelH - topOff;
+  // and shrink to fit that band, so the shorter space does not clip the body
+  if(topOff > 0 && band > 0) S = Math.min(S, band/(2.2*scale));
+  const cy = topOff > 0 ? topOff + band/2 : Math.max(S*0.9, (h - panelH)/2);
   // Body spin about z, the spin axis by convexinv's convention. Sign VERIFIED against the
   // data, not reasoned from the transform: rendering the mesh at each phase and correlating
   // the synthetic brightness with the observed folded curve gives r=+0.99 this way and
