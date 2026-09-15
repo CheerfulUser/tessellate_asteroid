@@ -37,6 +37,9 @@ HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
 MIN_PTS = 50
 NB = 72
+# 0.1 let the solver dump unconstrained area into a spin-axis facet; 1.0 collapses that from
+# 18-34% to ~2-3% of the surface with no cost in fit quality (rms flat over 0.03-3.0).
+CONVEXITY_W = float(os.environ.get('CI_CONVEX', 1.0))
 # Pole FIXED, not fitted. Single-apparition data cannot determine it -- all eight starting
 # orientations fit to within 1-10% in rms -- and fitting it anyway lets the solver trade pole
 # against shape, dumping unconstrained area into a facet on the spin axis (Link: 18-34% of its
@@ -109,7 +112,8 @@ def write_control(path, lam, bet, per):
         _fl = '0' if FIX_POLE else '1'
         f.write(f'{lam}\t\t{_fl}\tinital lambda\n{bet}\t\t{_fl}\tinitial beta\n'
                 f'{per}\t\t1\tinital period\n')
-        f.write('0\t\t\tzero time\n0\t\t\tinitial rotation angle\n0.1\t\t\tconvexity regularization\n')
+        f.write('0\t\t\tzero time\n0\t\t\tinitial rotation angle\n'
+                f'{CONVEXITY_W}\t\t\tconvexity regularization\n')
         f.write(f'{HARM} {HARM}\t\t\tdegree and order\n{NROWS}\t\t\tnumber of rows\n')
         for l in ["0.5\t\t0\ta", "0.1\t\t0\td", "-0.5\t\t0\tk", "0.1\t\t0\tc"]:
             f.write(l + '\n')
@@ -208,7 +212,10 @@ def process(des, period_hr, lc_path, workdir, outdir):
         rec.update(lambda_circ_std_deg=lam_std, beta_std_deg=float(bet.std()),
                    period_std_s=float(per.std() * 3600),
                    representative_lambda_deg=best['lam'], representative_beta_deg=best['bet'],
-                   model_period_hr=best['per'], pole_constrained=bool(lam_std < 20))
+                   model_period_hr=best['per'],
+                   # meaningless when the pole is fixed: the scatter is zero by construction
+                   pole_constrained=(None if FIX_POLE else bool(lam_std < 20)),
+                   pole_fixed=FIX_POLE)
 
         mk = minkowski(best['shape'])
         if mk is None:
@@ -218,8 +225,12 @@ def process(des, period_hr, lc_path, workdir, outdir):
         rec.update(n_verts=len(V), n_facets=len(F), nonconvex_faces=int(nbad))
         if nbad:
             rec['error'] = f'{nbad} non-convex faces'; return rec
-        ext = np.sort(V.max(0) - V.min(0))[::-1]
-        rec.update(bbox_a_over_b=float(ext[0] / ext[1]), bbox_b_over_c=float(ext[1] / ext[2]))
+        # z is the spin axis, so only the EQUATORIAL ratio relates to lightcurve amplitude.
+        # Sorting all three extents and calling the top two "a/b" reported the polar ratio for
+        # elongated-along-z bodies -- it gave 1.54 for Link whose equatorial ratio is 1.08.
+        _e = V.max(0) - V.min(0)
+        rec.update(equatorial_ratio=float(max(_e[0], _e[1]) / min(_e[0], _e[1])),
+                   polar_ratio=float(_e[2] / min(_e[0], _e[1])))
 
         # folded curve + per-session-rescaled model on one grid
         pl = open(best['params']).read().split()
