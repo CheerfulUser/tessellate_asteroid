@@ -165,6 +165,21 @@ html = f'''<!doctype html><meta charset="utf-8">
   #rand:hover{{border-color:var(--accent);background:#18202e}}
   #rand:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}
   @media (max-width:520px){{ .searchrow{{flex-wrap:wrap}} #rand{{width:100%;padding:10px 16px}} }}
+  /* ---- MOBILE. Desktop rules above are untouched. The table is the problem: seven columns
+     of numbers will not fit a phone, so it scrolls inside its own container rather than
+     forcing the whole page sideways, and the least essential columns drop out. */
+  @media (max-width:640px){{
+    main{{padding:26px 14px 56px}}
+    h1{{font-size:26px}}
+    .kpi{{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}}
+    .figs{{grid-template-columns:1fr}}
+    .tablewrap{{overflow-x:auto;-webkit-overflow-scrolling:touch}}
+    table{{font-size:12px;min-width:460px}}
+    th,td{{padding:6px 7px}}
+    /* Diameter and LCDB are the least load-bearing on a small screen */
+    th:nth-child(4),td:nth-child(4),th:nth-child(7),td:nth-child(7){{display:none}}
+  }}
+
   #q{{width:100%;padding:11px 13px;font-size:14px;border-radius:8px;background:#141a26;
     border:1px solid var(--panel-border);color:var(--text);font-family:inherit}}
   #q:focus{{outline:none;border-color:var(--accent)}}
@@ -232,7 +247,7 @@ html = f'''<!doctype html><meta charset="utf-8">
     <button id="rand" type="button" title="Open a random asteroid from the catalog">Random asteroid</button>
   </div>
   <div id="hits"></div>
-  <table><thead><tr>
+  <div class="tablewrap"><table><thead><tr>
     <th data-k="d" tabindex="0" role="button">Object</th>
     <th data-k="p" tabindex="0" role="button">Period (hours)</th>
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
@@ -240,7 +255,7 @@ html = f'''<!doctype html><meta charset="utf-8">
     <th data-k="t" tabindex="0" role="button">Type</th>
     <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
-  </tr></thead><tbody id="rows"></tbody></table>
+  </tr></thead><tbody id="rows"></tbody></table></div>
   <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
      catalog &rarr;</a> &mdash; all {S['n']:,} objects, with filters and sorting.</p>
 
@@ -399,6 +414,18 @@ search = f'''<!doctype html><meta charset="utf-8">
   th[aria-sort="descending"]::after{{content:'\\2193';opacity:1;color:var(--accent)}}
   th[aria-sort]{{color:var(--text)}}
   td{{text-align:right;padding:6px 9px;border-bottom:1px solid var(--hairline)}}
+  /* ---- MOBILE. Same approach as the landing page: the table scrolls in its own container
+     and the least essential columns drop, so the page itself never scrolls sideways. */
+  @media (max-width:640px){{
+    main{{padding:22px 14px 56px}}
+    h1{{font-size:21px}}
+    .filters{{gap:10px;font-size:11.5px}}
+    .tablewrap{{overflow-x:auto;-webkit-overflow-scrolling:touch}}
+    table{{font-size:12px;min-width:460px}}
+    th,td{{padding:6px 7px}}
+    th:nth-child(4),td:nth-child(4),th:nth-child(7),td:nth-child(7){{display:none}}
+    .toolbar{{padding:10px 0 12px}}
+  }}
   th:first-child,td:first-child{{text-align:left}}
   tbody tr:hover{{background:#161d2b}}
   td a{{color:var(--accent);text-decoration:none}}
@@ -441,7 +468,7 @@ search = f'''<!doctype html><meta charset="utf-8">
     </div>
     <div id="hits"></div>
   </div>
-  <table><thead><tr>
+  <div class="tablewrap"><table><thead><tr>
     <th data-k="d" tabindex="0" role="button" aria-sort="ascending">Object</th>
     <th data-k="p" tabindex="0" role="button">Period (hours)</th>
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
@@ -449,7 +476,7 @@ search = f'''<!doctype html><meta charset="utf-8">
     <th data-k="t" tabindex="0" role="button">Type</th>
     <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
-  </tr></thead><tbody id="rows"></tbody></table>
+  </tr></thead><tbody id="rows"></tbody></table></div>
 </main>
 <script>
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),

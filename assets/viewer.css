@@ -65,3 +65,59 @@
 .lconly #lc{width:100%;height:220px;display:block;margin:6px 0 4px}
 .lconly .caveat{margin-top:18px}
 body:has(.lconly){overflow:auto;height:auto;position:static}
+
+/* ---------------------------------------------------------------------------
+   MOBILE. Desktop layout is untouched: every rule below is inside a max-width
+   query, and the .open class it toggles has no styling outside it.
+
+   The floating info panel does not work on a phone -- it covers most of the
+   canvas. Collapsed it becomes a top bar showing the object name and the way
+   back; tapping the name expands it over the canvas. The controls and the
+   lightcurve stay pinned at the bottom, where a thumb can reach them.
+   --------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* 100vh is wrong on mobile browsers whose chrome hides on scroll; dvh tracks it */
+  body { height: 100dvh; }
+
+  .info {
+    top: 8px; left: 8px; right: 8px;
+    max-width: none; width: auto;
+    padding: 10px 13px;
+    overflow: hidden;
+  }
+  /* collapsed: keep only the way back and the name */
+  .info:not(.open) > *:not(.home):not(h1) { display: none; }
+  .info:not(.open) h1 { margin: 0; }
+
+  .info h1 {
+    cursor: pointer; user-select: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 17px;
+  }
+  .info h1::after {
+    content: '▾';
+    font-size: 13px; color: var(--text-faint); flex: 0 0 auto;
+    transition: transform .15s ease;
+  }
+  .info.open h1::after { transform: rotate(180deg); }
+  .info h1:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .info.open {
+    overflow-y: auto;
+    max-height: calc(100dvh - 230px);   /* leave the control panel visible */
+  }
+
+  .ctrl {
+    left: 8px; right: 8px; bottom: 8px;
+    min-width: 0; padding: 11px 13px; gap: 8px;
+  }
+  canvas#lc { height: 108px; }
+  .hint { display: none; }             /* the gesture is discoverable; the text is not worth the height */
+  .row { flex-wrap: wrap; }
+  .btn { padding: 8px 13px; }          /* a comfortable tap target */
+
+  /* lightcurve-only pages are already a single column; just tighten the margins */
+  .lconly { padding: 18px 14px 50px; }
+  .lconly h1 { font-size: 19px; }
+  .lconly #lc { height: 190px; }
+}

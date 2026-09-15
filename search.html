@@ -38,6 +38,18 @@
   th[aria-sort="descending"]::after{content:'\2193';opacity:1;color:var(--accent)}
   th[aria-sort]{color:var(--text)}
   td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--hairline)}
+  /* ---- MOBILE. Same approach as the landing page: the table scrolls in its own container
+     and the least essential columns drop, so the page itself never scrolls sideways. */
+  @media (max-width:640px){
+    main{padding:22px 14px 56px}
+    h1{font-size:21px}
+    .filters{gap:10px;font-size:11.5px}
+    .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    table{font-size:12px;min-width:460px}
+    th,td{padding:6px 7px}
+    th:nth-child(4),td:nth-child(4),th:nth-child(7),td:nth-child(7){display:none}
+    .toolbar{padding:10px 0 12px}
+  }
   th:first-child,td:first-child{text-align:left}
   tbody tr:hover{background:#161d2b}
   td a{color:var(--accent);text-decoration:none}
@@ -80,7 +92,7 @@
     </div>
     <div id="hits"></div>
   </div>
-  <table><thead><tr>
+  <div class="tablewrap"><table><thead><tr>
     <th data-k="d" tabindex="0" role="button" aria-sort="ascending">Object</th>
     <th data-k="p" tabindex="0" role="button">Period (hours)</th>
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
@@ -88,7 +100,7 @@
     <th data-k="t" tabindex="0" role="button">Type</th>
     <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
-  </tr></thead><tbody id="rows"></tbody></table>
+  </tr></thead><tbody id="rows"></tbody></table></div>
 </main>
 <script>
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),

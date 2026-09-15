@@ -1,3 +1,30 @@
+// Mobile: the info panel collapses to its name, tapping expands it. The .open class has no
+// styling outside the max-width query, so binding this on every viewport is harmless -- desktop
+// toggles a class that does nothing. Kept inline in both shared scripts so no page needs an
+// extra tag, and guarded so it can never take a page down.
+(function(){
+  function initInfoToggle(){
+    try{
+      var info=document.querySelector('.panel.info');
+      if(!info) return;
+      var h=info.querySelector('h1');
+      if(!h||h.dataset.tapInit) return;
+      h.dataset.tapInit='1';
+      h.setAttribute('role','button');
+      h.setAttribute('tabindex','0');
+      var sync=function(){ h.setAttribute('aria-expanded', info.classList.contains('open')?'true':'false'); };
+      var toggle=function(e){ e.preventDefault(); info.classList.toggle('open'); sync(); };
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', function(e){
+        if(e.key==='Enter'||e.key===' ') toggle(e);
+      });
+      sync();
+    }catch(e){ /* never break the page over a UI affordance */ }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initInfoToggle);
+  else initInfoToggle();
+})();
+
 // Send the back link where the visitor actually came from. Asteroid pages hardcode
 // "<- Catalog" pointing at index.html, but most visitors arrive from search.html, and dropping
 // them on the home page loses the query, filters and sort they had set up. Kept inline in both
