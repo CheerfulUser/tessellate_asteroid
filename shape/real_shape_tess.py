@@ -57,15 +57,76 @@ CONVEXITY_W = float(os.environ.get('CI_CONVEX', 1.0))
 # ratio becomes stable at 1.01-1.22 across six very different assumed orientations.
 # The shape is the product; the pole is a nuisance parameter this data cannot supply.
 FIX_POLE = os.environ.get('CI_FIX_POLE', '1') == '1'
-POLE_LAMBDA = float(os.environ.get('CI_POLE_LAM', 0.0))
-POLE_BETA = float(os.environ.get('CI_POLE_BET', 0.0))
+POLE_LAMBDA = os.environ.get('CI_POLE_LAM')      # None -> choose per object (equator-on)
+POLE_BETA = os.environ.get('CI_POLE_BET')
 HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
 MIN_PTS = 50
+
+
+def perpendicular_poles(ev, n=12):
+    """Candidate spin axes perpendicular to the mean observer direction.
+
+    Forcing the pole perpendicular to the line of sight makes the aspect 90 deg -- equator-on --
+    which maximises the rotational signal. That constraint matters: a blind choice of
+    lambda=0, beta=0 put (75) Eurydike 5.9 deg from pole-on, where a rotating body produces
+    almost no brightness variation, and its fit collapsed (binned rms 0.0112 -> 0.0394, a 50%
+    amplitude deficit).
+
+    But "perpendicular" is a CIRCLE of directions, not one, and the choice within it is not
+    free: for (3570) Wuyeesun the binned rms varies 2.3x around that circle (0.0080 to 0.0183).
+    Picking the direction nearest the celestial pole -- the obvious-looking default -- landed on
+    very nearly the worst option. So the circle is scanned and the best orientation fitted,
+    rather than assumed.
+    """
+    import numpy as np
+    from astropy.coordinates import SkyCoord
+    en = (ev / np.linalg.norm(ev, axis=1, keepdims=True)).mean(axis=0)
+    en /= np.linalg.norm(en)
+    a = np.array([0.0, 0.0, 1.0]) - np.dot([0.0, 0.0, 1.0], en) * en
+    if np.linalg.norm(a) < 1e-6:
+        a = np.array([1.0, 0.0, 0.0]) - en[0] * en
+    a /= np.linalg.norm(a)
+    b = np.cross(en, a)
+    out = []
+    for ang in np.linspace(0, np.pi, n, endpoint=False):     # pi: +v and -v are the same axis
+        v = np.cos(ang) * a + np.sin(ang) * b
+        c = SkyCoord(x=v[0], y=v[1], z=v[2], representation_type='cartesian',
+                     frame='icrs').barycentrictrueecliptic
+        out.append((float(c.lon.deg), float(c.lat.deg)))
+    return out
+
+
+def binned_rms(df, model, period_hr, nb=72):
+    """Model-minus-data rms on the FOLDED, BINNED curve.
+
+    Per-point rms is dominated by photometric noise and barely moves between good and bad
+    orientations (Wuyeesun: 0.0751-0.0770 across the whole circle). Binning averages the noise
+    down and exposes systematic shape mismatch -- the same thing the eye picks up on the folded
+    plot -- where the spread is 2.3x.
+    """
+    import numpy as np
+    obs = df['rel_flux'].values
+    m = np.asarray(model, dtype=float).copy()
+    for v in pd.unique(df['visit'].values):
+        k = df['visit'].values == v
+        mm = m[k].mean()
+        if np.isfinite(mm) and mm != 0:
+            m[k] *= obs[k].mean() / mm
+    per = period_hr / 24.0
+    ph = (df['mjd'].values % per) / per
+    bi = np.clip((ph * nb).astype(int), 0, nb - 1)
+    cnt = np.bincount(bi, minlength=nb)
+    dm = np.bincount(bi, weights=obs, minlength=nb) / np.maximum(cnt, 1)
+    mm2 = np.bincount(bi, weights=m, minlength=nb) / np.maximum(cnt, 1)
+    ok = cnt >= 3
+    return float(np.sqrt(np.mean((mm2[ok] - dm[ok]) ** 2)))
+
+
 _ALL_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
 # With a fixed pole every start is identical, so run one. With a free pole, probe all eight to
 # measure the scatter.
-START_POLES = ([(POLE_LAMBDA, POLE_BETA)] if FIX_POLE else _ALL_POLES)
+START_POLES = _ALL_POLES      # replaced per object when FIX_POLE is set
 
 
 def build_geometry(df):
@@ -189,11 +250,20 @@ def main(key):
           f"phase angle {df.phase_angle_deg.min():.2f}-{df.phase_angle_deg.max():.2f} deg")
 
     sv, ev = build_geometry(df)
+    if FIX_POLE:
+        if POLE_LAMBDA is not None and POLE_BETA is not None:
+            starts = [(float(POLE_LAMBDA), float(POLE_BETA))]
+            print(f'  pole FIXED at the requested lambda={starts[0][0]:.1f}, beta={starts[0][1]:+.1f}')
+        else:
+            starts = perpendicular_poles(ev, n=int(os.environ.get('CI_POLE_SCAN', 12)))
+            print(f'  scanning {len(starts)} equator-on orientations for the best folded fit')
+    else:
+        starts = START_POLES
     lcs = os.path.join(HERE, f'{tag}_inversion_input_lcs.txt')
     nses = write_lcs(df, sv, ev, lcs)
 
     sols = []
-    for i, (l0, b0) in enumerate(START_POLES):
+    for i, (l0, b0) in enumerate(starts):
         cp = os.path.join(HERE, f'{tag}_control_{i}.txt')
         spp = os.path.join(HERE, f'{tag}_shape_{i}.txt')
         pp = os.path.join(HERE, f'{tag}_params_{i}.txt')
@@ -217,7 +287,23 @@ def main(key):
     print('  -> ' + ('starts CONVERGE' if conv else
                      'starts SCATTER: pole undetermined (expected for one apparition)'))
 
-    best = min(sols, key=lambda s: abs(s['lam'] - np.median(lam)) + abs(s['bet'] - np.median(bet)))
+    if FIX_POLE:
+        # every candidate is equator-on and equally legitimate a priori, so choose the one that
+        # actually fits the folded lightcurve best. Selecting by "median pole" would be
+        # meaningless here: the candidates lie on a circle, not scattered about a centre.
+        for sol in sols:
+            try:
+                sol['brms'] = binned_rms(df, np.loadtxt(sol['fit']), sol['per'])
+            except Exception:
+                sol['brms'] = float('inf')
+        best = min(sols, key=lambda s: s['brms'])
+        _sp = sorted(s['brms'] for s in sols if np.isfinite(s['brms']))
+        if len(_sp) > 1:
+            print(f'  binned rms across {len(_sp)} orientations: {_sp[0]:.4f}-{_sp[-1]:.4f} '
+                  f'({_sp[-1]/max(_sp[0],1e-9):.1f}x spread) -> chose '
+                  f'lambda={best["lam"]:.1f}, beta={best["bet"]:+.1f}')
+    else:
+        best = min(sols, key=lambda s: abs(s['lam'] - np.median(lam)) + abs(s['bet'] - np.median(bet)))
 
     # --- residual vs rotational phase: can a CONVEX model reproduce the feature?
     model = np.loadtxt(best['fit'])

@@ -45,8 +45,53 @@ CONVEXITY_W = float(os.environ.get('CI_CONVEX', 1.0))
 # against shape, dumping unconstrained area into a facet on the spin axis (Link: 18-34% of its
 # surface in one face, falling to 2.3% once fixed). One start is therefore sufficient.
 FIX_POLE = os.environ.get('CI_FIX_POLE', '1') == '1'
+POLE_SCAN = int(os.environ.get('CI_POLE_SCAN', 12))
 _ALL_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
-START_POLES = ([(0.0, 0.0)] if FIX_POLE else _ALL_POLES)
+
+
+def perpendicular_poles(ev, n=POLE_SCAN):
+    """Candidate axes perpendicular to the mean observer direction, i.e. aspect 90 deg.
+
+    The perpendicular constraint is what keeps the geometry equator-on: a blind pole left
+    (75) Eurydike 5.9 deg from pole-on, where no shape can produce its amplitude. But
+    "perpendicular" is a CIRCLE, and the choice within it changes the folded fit by 1.3-2.7x
+    across the four test objects, so it is scanned rather than assumed."""
+    from astropy.coordinates import SkyCoord
+    en = (ev / np.linalg.norm(ev, axis=1, keepdims=True)).mean(axis=0)
+    en /= np.linalg.norm(en)
+    a = np.array([0.0, 0.0, 1.0]) - np.dot([0.0, 0.0, 1.0], en) * en
+    if np.linalg.norm(a) < 1e-6:
+        a = np.array([1.0, 0.0, 0.0]) - en[0] * en
+    a /= np.linalg.norm(a)
+    b = np.cross(en, a)
+    out = []
+    for ang in np.linspace(0, np.pi, n, endpoint=False):
+        v = np.cos(ang) * a + np.sin(ang) * b
+        c = SkyCoord(x=v[0], y=v[1], z=v[2], representation_type='cartesian',
+                     frame='icrs').barycentrictrueecliptic
+        out.append((float(c.lon.deg), float(c.lat.deg)))
+    return out
+
+
+def folded_rms(df, model, period_hr, blocks, nb=NB):
+    """Model-minus-data rms on the folded, binned curve, after per-session rescaling.
+
+    Per-point rms is noise-dominated and barely moves between good and bad orientations
+    (Wuyeesun: 0.0751-0.0770 across the whole circle, while the binned rms spans 2.3x)."""
+    obs = df['rel_flux'].values
+    m = np.asarray(model, dtype=float).copy()
+    for idx in blocks:
+        mm = m[idx].mean()
+        if np.isfinite(mm) and mm != 0:
+            m[idx] *= obs[idx].mean() / mm
+    per = period_hr / 24.0
+    ph = (df['mjd'].values % per) / per
+    bi = np.clip((ph * nb).astype(int), 0, nb - 1)
+    cnt = np.bincount(bi, minlength=nb)
+    dm = np.bincount(bi, weights=obs, minlength=nb) / np.maximum(cnt, 1)
+    mm2 = np.bincount(bi, weights=m, minlength=nb) / np.maximum(cnt, 1)
+    ok = cnt >= 3
+    return float(np.sqrt(np.mean((mm2[ok] - dm[ok]) ** 2))) if ok.sum() else float('inf')
 T_INV = int(os.environ.get('T_INV', 900))
 T_MINK = int(os.environ.get('T_MINK', 300))
 
@@ -190,8 +235,10 @@ def process(des, period_hr, lc_path, workdir, outdir):
         lcs = f'{workdir}/{tag}_lcs.txt'
         write_lcs(df, sv, ev, blocks, lcs)
 
+        starts = perpendicular_poles(ev) if FIX_POLE else _ALL_POLES
+        rec['n_orientations'] = len(starts)
         sols, fails = [], []
-        for i, (l0, b0) in enumerate(START_POLES):
+        for i, (l0, b0) in enumerate(starts):
             cp, spp = f'{workdir}/{tag}_c{i}.txt', f'{workdir}/{tag}_s{i}.txt'
             pp, fp = f'{workdir}/{tag}_p{i}.txt', f'{workdir}/{tag}_f{i}.txt'
             write_control(cp, l0, b0, period_hr)
@@ -208,7 +255,19 @@ def process(des, period_hr, lc_path, workdir, outdir):
         lam = np.array([s['lam'] for s in sols]); bet = np.array([s['bet'] for s in sols])
         per = np.array([s['per'] for s in sols])
         lam_std = float(np.degrees(np.sqrt(-2 * np.log(abs(np.mean(np.exp(1j * np.radians(lam))))))))
-        best = min(sols, key=lambda s: abs(s['lam'] - np.median(lam)) + abs(s['bet'] - np.median(bet)))
+        if FIX_POLE:
+            for sol in sols:
+                try:
+                    sol['brms'] = folded_rms(df, np.loadtxt(sol['fit']), sol['per'], blocks)
+                except Exception:
+                    sol['brms'] = float('inf')
+            best = min(sols, key=lambda s: s['brms'])
+            _f = sorted(s['brms'] for s in sols if np.isfinite(s['brms']))
+            rec['orientation_rms_min'] = _f[0] if _f else None
+            rec['orientation_rms_max'] = _f[-1] if _f else None
+        else:
+            best = min(sols, key=lambda s: abs(s['lam'] - np.median(lam))
+                       + abs(s['bet'] - np.median(bet)))
         rec.update(lambda_circ_std_deg=lam_std, beta_std_deg=float(bet.std()),
                    period_std_s=float(per.std() * 3600),
                    representative_lambda_deg=best['lam'], representative_beta_deg=best['bet'],
