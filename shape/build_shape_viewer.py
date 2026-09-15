@@ -246,6 +246,10 @@ html = f'''<title>{res['target']} Shape Model</title>
     scrollbar-width:thin;scrollbar-color:var(--panel-border) transparent}}
   .info::-webkit-scrollbar{{width:7px}}
   .info::-webkit-scrollbar-thumb{{background:var(--panel-border);border-radius:4px}}
+  .home{{display:inline-block;font-size:11.5px;color:var(--text-dim);text-decoration:none;
+    margin:0 0 10px;border-bottom:1px solid transparent}}
+  .home:hover{{color:var(--accent);border-bottom-color:var(--accent)}}
+  .home:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}
   .eyebrow{{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;
     letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin:0 0 6px}}
   h1{{font-size:19px;font-weight:600;margin:0 0 12px;text-wrap:balance}}
@@ -282,6 +286,7 @@ html = f'''<title>{res['target']} Shape Model</title>
 <canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid {res['target']}, coloured by relative albedo"></canvas>
 
 <div class="panel info">
+  <a class="home" href="../index.html">&larr; Catalogue</a>
   <p class="eyebrow">TESS convex inversion</p>
   <h1>{res['target']}</h1>
   <p class="sec" style="margin-top:0">Physical properties</p>
