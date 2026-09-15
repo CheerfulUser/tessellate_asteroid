@@ -49,10 +49,23 @@ TARGETS = {
 # single-apparition data risks fitting noise, so the convexity regularisation matters more
 # here -- check that the fit rms does not degrade and the shape stays convex-plausible.
 CONVEXITY_W = float(os.environ.get('CI_CONVEX', 1.0))
+# FIX the pole rather than fitting it. Single-apparition data cannot determine a pole -- all
+# eight starting orientations fit the lightcurve to within 1-10% in rms, so the data has no
+# preference. Fitting it anyway lets the solver trade pole against shape, and it pays for that
+# freedom by dumping unconstrained area into a facet on the spin axis: (3550) Link put 18-34%
+# of its surface in one face. With the pole fixed that collapses to 2.4-5.2% and the equatorial
+# ratio becomes stable at 1.01-1.22 across six very different assumed orientations.
+# The shape is the product; the pole is a nuisance parameter this data cannot supply.
+FIX_POLE = os.environ.get('CI_FIX_POLE', '1') == '1'
+POLE_LAMBDA = float(os.environ.get('CI_POLE_LAM', 0.0))
+POLE_BETA = float(os.environ.get('CI_POLE_BET', 0.0))
 HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
 MIN_PTS = 50
-START_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
+_ALL_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
+# With a fixed pole every start is identical, so run one. With a free pole, probe all eight to
+# measure the scatter.
+START_POLES = ([(POLE_LAMBDA, POLE_BETA)] if FIX_POLE else _ALL_POLES)
 
 
 def build_geometry(df):
@@ -94,8 +107,9 @@ def write_lcs(df, sv, ev, path):
 
 def write_control(path, lam, bet, per):
     with open(path, 'w') as f:
-        f.write(f'{lam}\t\t1\tinital lambda [deg] (0/1 - fixed/free)\n')
-        f.write(f'{bet}\t\t1\tinitial beta [deg] (0/1 - fixed/free)\n')
+        _fl = '0' if FIX_POLE else '1'      # 0 = fixed, 1 = free
+        f.write(f'{lam}\t\t{_fl}\tinital lambda [deg] (0/1 - fixed/free)\n')
+        f.write(f'{bet}\t\t{_fl}\tinitial beta [deg] (0/1 - fixed/free)\n')
         f.write(f'{per}\t\t1\tinital period [hours] (0/1 - fixed/free)\n')
         f.write('0\t\t\tzero time [JD]\n0\t\t\tinitial rotation angle [deg]\n')
         # Convexity regularisation, raised from 0.1. At 0.1 the solver dumps unconstrained area

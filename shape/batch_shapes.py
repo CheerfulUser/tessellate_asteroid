@@ -37,7 +37,13 @@ HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
 MIN_PTS = 50
 NB = 72
-START_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
+# Pole FIXED, not fitted. Single-apparition data cannot determine it -- all eight starting
+# orientations fit to within 1-10% in rms -- and fitting it anyway lets the solver trade pole
+# against shape, dumping unconstrained area into a facet on the spin axis (Link: 18-34% of its
+# surface in one face, falling to 2.3% once fixed). One start is therefore sufficient.
+FIX_POLE = os.environ.get('CI_FIX_POLE', '1') == '1'
+_ALL_POLES = [(0, 0), (90, 0), (180, 45), (270, -45), (45, 60), (135, -30), (225, 20), (315, -60)]
+START_POLES = ([(0.0, 0.0)] if FIX_POLE else _ALL_POLES)
 T_INV = int(os.environ.get('T_INV', 900))
 T_MINK = int(os.environ.get('T_MINK', 300))
 
@@ -100,7 +106,9 @@ def write_lcs(df, sv, ev, blocks, path):
 
 def write_control(path, lam, bet, per):
     with open(path, 'w') as f:
-        f.write(f'{lam}\t\t1\tinital lambda\n{bet}\t\t1\tinitial beta\n{per}\t\t1\tinital period\n')
+        _fl = '0' if FIX_POLE else '1'
+        f.write(f'{lam}\t\t{_fl}\tinital lambda\n{bet}\t\t{_fl}\tinitial beta\n'
+                f'{per}\t\t1\tinital period\n')
         f.write('0\t\t\tzero time\n0\t\t\tinitial rotation angle\n0.1\t\t\tconvexity regularization\n')
         f.write(f'{HARM} {HARM}\t\t\tdegree and order\n{NROWS}\t\t\tnumber of rows\n')
         for l in ["0.5\t\t0\ta", "0.1\t\t0\td", "-0.5\t\t0\tk", "0.1\t\t0\tc"]:

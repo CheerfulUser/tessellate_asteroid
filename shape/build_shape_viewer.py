@@ -296,12 +296,13 @@ html = f'''<title>{res['target']} Shape Model</title>
   <div class="stat-row"><span class="stat-label">Phase-angle range</span><span class="stat-value">{res['phase_angle_range_deg']:.2f} deg</span></div>
   <div class="stat-row"><span class="stat-label">Aspect angle (TESS)</span><span class="stat-value">{ASPECT:.1f} deg</span></div>
   <div class="stat-row"><span class="stat-label">Facets</span><span class="stat-value">{res['recovered_facets']}</span></div>
-  <div class="stat-row"><span class="stat-label">Pole spread (&lambda; circ-std)</span><span class="stat-value">{res.get('lambda_circ_std_deg',float('nan')):.0f} deg</span></div>
+  <div class="stat-row"><span class="stat-label">Spin axis</span><span class="stat-value">assumed &lambda;={res.get('representative_lambda_deg',0):.0f}&deg;, &beta;={res.get('representative_beta_deg',0):+.0f}&deg;</span></div>
   {alb_note}
   <div class="caveat">
     Only {res['phase_angle_range_deg']:.2f}&deg; of phase-angle coverage &mdash; one viewing aspect.
-    The pole does not converge across starting points, so the shape is real but its
-    ORIENTATION is arbitrary.
+    The spin axis is ASSUMED, not fitted: single-apparition data cannot determine a pole, and
+    every orientation fits this lightcurve about equally well. The shape is barely affected by
+    that choice, but its orientation in space carries no information.
     Albedo colouring assumes all residual is albedo rather than unmodelled shape; the two are
     degenerate in disc-integrated photometry.
   </div>
