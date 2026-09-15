@@ -134,6 +134,28 @@ S = dict(n=len(r), new=int(r.published_rot_per_hr.isna().sum()),
          shapes=int(r.key.isin(_shape_keys).sum()),
          noshape=int((~r.key.isin(_shape_keys)).sum()))
 
+import landing_text as TXT   # noqa: E402  (all page prose lives there)
+
+
+_BARE_AMP = re.compile(r'&(?!(?:[A-Za-z][A-Za-z0-9]{1,31}|#\d{1,7}|#[xX][0-9A-Fa-f]{1,6});)')
+
+
+def _t(v):
+    """Fill {placeholders} from the catalogue stats and collapse the source line wrapping.
+
+    Also escapes bare ampersands. The copy is hand-edited plain text, so "rotation & shape" is
+    natural to write but is invalid HTML and would be swallowed as an entity if a word followed
+    it. Entities that are already written out, like &mdash;, are left alone."""
+    return _BARE_AMP.sub('&amp;', ' '.join(str(v).format(**S).split()))
+
+
+T = {k: _t(v) for k, v in vars(TXT).items()
+     if k.isupper() and isinstance(v, str)}
+T['KPIS'] = ''.join(
+    f'<div><div class="v">{_t(val)}</div><div class="l">{_t(lab)}</div></div>'
+    for val, lab in TXT.KPIS)
+T['CAPTIONS'] = {k: _t(v) for k, v in TXT.CAPTIONS.items()}
+
 html = f'''<!doctype html><meta charset="utf-8">
 <title>TESSELLATE asteroid rotation catalog</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -153,6 +175,10 @@ html = f'''<!doctype html><meta charset="utf-8">
   h2{{font-size:16px;margin:36px 0 10px}}
   p.note{{color:var(--text-dim);font-size:13px;line-height:1.6;margin:0 0 14px;max-width:72ch}}
   .figs{{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}}
+  /* citation links inside body prose */
+  .note a{{color:var(--accent);text-decoration:none;border-bottom:1px solid #a78bfa55}}
+  .note a:hover{{border-bottom-color:var(--accent)}}
+  .note a:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}
   .figs figure{{margin:0;background:var(--panel);border:1px solid var(--panel-border);
     border-radius:9px;padding:10px}}
   .figs img{{width:100%;height:auto;border-radius:5px;display:block;background:#fff}}
@@ -223,28 +249,17 @@ html = f'''<!doctype html><meta charset="utf-8">
     border:1px solid #e0a45840;font-size:12.5px;line-height:1.6;color:#e8c99a;max-width:72ch}}
 </style>
 <main>
-  <p class="eyebrow">TESS sectors 27&ndash;55 &middot; TESSELLATE</p>
-  <h1>Asteroid rotation catalog</h1>
-  <p class="lede">Rotation periods, phase-folded lightcurves and convex shape models for
-     asteroids observed by TESS. Because TESS watches the same field continuously for about a
-     month, these lightcurves run unbroken for weeks &mdash; reaching slow rotators that a single
-     night cannot close, and pinning periods across hundreds of consecutive rotations.</p>
+  <p class="eyebrow">{T['EYEBROW']}</p>
+  <h1>{T['TITLE']}</h1>
+  <p class="lede">{T['LEDE']}</p>
 
-  <div class="kpi">
-    <div><div class="v">{S['n']:,}</div><div class="l">rotation periods</div></div>
-    <div><div class="v">{S['new']:,}</div><div class="l">with no previously published period</div></div>
-    <div><div class="v">{S['long']:,}</div><div class="l">longer than 24 hours</div></div>
-    <div><div class="v">{S['base']:.0f} days</div><div class="l">median observing baseline</div></div>
-    <div><div class="v">{S['pts']:,}</div><div class="l">median measurements each</div></div>
-  </div>
+  <div class="kpi">{T['KPIS']}</div>
 
-  <h2>Search the catalog</h2>
-  <p class="note">Type a name or number for a quick look, or open one at random. Every object
-     has a page: {S['shapes']:,} carry a convex shape model, and {S['noshape']:,} have a period
-     and folded lightcurve but no model, each stating why.</p>
+  <h2>{T['SEARCH_HEADING']}</h2>
+  <p class="note">{T['SEARCH_NOTE']}</p>
   <div class="searchrow">
-    <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
-    <button id="rand" type="button" title="Open a random asteroid from the catalog">Random asteroid</button>
+    <input id="q" type="search" placeholder="{T['SEARCH_PLACEHOLDER']}" autocomplete="off">
+    <button id="rand" type="button" title="Open a random asteroid from the catalog">{T['RANDOM_BUTTON']}</button>
   </div>
   <div id="hits"></div>
   <div class="tablewrap"><table><thead><tr>
@@ -256,39 +271,32 @@ html = f'''<!doctype html><meta charset="utf-8">
     <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table></div>
-  <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
-     catalog &rarr;</a> &mdash; all {S['n']:,} objects, with filters and sorting.</p>
+  <p class="note" style="margin-top:12px"><a class="more" href="search.html">{T['BROWSE_LINK']}</a> &mdash; {T['BROWSE_NOTE']}</p>
 
-  <h2>The population</h2>
+  <h2>{T['POPULATION_HEADING']}</h2>
   <div class="figs">
     <figure><img src="assets/period_hist.png" alt="Distribution of rotation periods">
-      <figcaption>Rotation periods. {S['long']:,} objects turn more slowly than once a day,
-      the regime ground-based photometry struggles to close.</figcaption></figure>
+      <figcaption>{T['CAPTIONS']['period_hist.png']}</figcaption></figure>
     <figure><img src="assets/spin_size.png" alt="Spin rate against diameter">
-      <figcaption>Spin rate against size. The 2.2 hour barrier is where a loosely bound rubble pile
-      would fly apart; almost nothing sits above it.</figcaption></figure>
+      <figcaption>{T['CAPTIONS']['spin_size.png']}</figcaption></figure>
     <figure><img src="assets/amplitude_period.png" alt="Lightcurve amplitude against period">
-      <figcaption>Amplitude against period. Larger amplitude means a more elongated body, since
-      a rounder one varies less as it turns.</figcaption></figure>
+      <figcaption>{T['CAPTIONS']['amplitude_period.png']}</figcaption></figure>
     <figure style="grid-column:1/-1"><img src="assets/orbital_elements.png"
         alt="Semi-major axis against inclination and eccentricity">
-      <figcaption>Where these asteroids orbit. The dashed lines are Jupiter mean-motion
-      resonances, which clear the Kirkwood gaps; clumps are collisional families. The catalog
-      samples the inner, middle and outer belt about equally.</figcaption></figure>
+      <figcaption>{T['CAPTIONS']['orbital_elements.png']}</figcaption></figure>
   </div>
 
-  <h2>What you can download</h2>
-  <p class="note">Each object page carries its phase-folded lightcurve with per-bin
-     uncertainties, the full stacked photometry behind it, and a rotatable convex shape model
-     &mdash; all downloadable, and the shape model is synchronised to the lightcurve so you can
-     watch which face produces which feature.</p>
+  <h2>{T['DOWNLOAD_HEADING']}</h2>
+  <p class="note">{T['DOWNLOAD_NOTE']}</p>
+
+  <h2>{T['DATA_HEADING']}</h2>
+  <p class="note">{T['DATA']}</p>
+
+  <h2>{T['CREDIT_HEADING']}</h2>
+  <p class="note">{T['CREDIT']}</p>
 
   <div class="caveat">
-    <strong>Reading a shape model.</strong> Most of these asteroids were seen during a single
-    apparition, from one direction. That constrains the shape but not its orientation in space,
-    so the spin axis is assumed rather than measured and every page says so. Convex inversion
-    also cannot represent concavities, so models systematically under-reach the deepest minima.
-    The rotation periods, by contrast, are well determined.
+    <strong>{T['CAVEAT_TITLE']}</strong> {T['CAVEAT']}
   </div>
 </main>
 <script>

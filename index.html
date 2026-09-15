@@ -17,6 +17,10 @@
   h2{font-size:16px;margin:36px 0 10px}
   p.note{color:var(--text-dim);font-size:13px;line-height:1.6;margin:0 0 14px;max-width:72ch}
   .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
+  /* citation links inside body prose */
+  .note a{color:var(--accent);text-decoration:none;border-bottom:1px solid #a78bfa55}
+  .note a:hover{border-bottom-color:var(--accent)}
+  .note a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .figs figure{margin:0;background:var(--panel);border:1px solid var(--panel-border);
     border-radius:9px;padding:10px}
   .figs img{width:100%;height:auto;border-radius:5px;display:block;background:#fff}
@@ -88,26 +92,15 @@
 </style>
 <main>
   <p class="eyebrow">TESS sectors 27&ndash;55 &middot; TESSELLATE</p>
-  <h1>Asteroid rotation catalog</h1>
-  <p class="lede">Rotation periods, phase-folded lightcurves and convex shape models for
-     asteroids observed by TESS. Because TESS watches the same field continuously for about a
-     month, these lightcurves run unbroken for weeks &mdash; reaching slow rotators that a single
-     night cannot close, and pinning periods across hundreds of consecutive rotations.</p>
+  <h1>Asteroid rotation &amp; shape catalog</h1>
+  <p class="lede">Rotation periods, phase-folded lightcurves and convex shape models for asteroids observed by TESS. Since TESS observes the same field continuously at high cadence for at least a month, these lightcurves can run unbroken for weeks &mdash; allowing us to recover precise rotation periods for both fast and slow rotators that are a challenge to recover from the ground.</p>
 
-  <div class="kpi">
-    <div><div class="v">16,427</div><div class="l">rotation periods</div></div>
-    <div><div class="v">12,068</div><div class="l">with no previously published period</div></div>
-    <div><div class="v">3,255</div><div class="l">longer than 24 hours</div></div>
-    <div><div class="v">46 days</div><div class="l">median observing baseline</div></div>
-    <div><div class="v">1,384</div><div class="l">median measurements each</div></div>
-  </div>
+  <div class="kpi"><div><div class="v">16,427</div><div class="l">rotation periods</div></div><div><div class="v">12,068</div><div class="l">with no previously published period</div></div><div><div class="v">3,255</div><div class="l">longer than 24 hours</div></div><div><div class="v">46 days</div><div class="l">median observing baseline</div></div><div><div class="v">1,384</div><div class="l">median measurements each</div></div></div>
 
   <h2>Search the catalog</h2>
-  <p class="note">Type a name or number for a quick look, or open one at random. Every object
-     has a page: 14,768 carry a convex shape model, and 1,659 have a period
-     and folded lightcurve but no model, each stating why.</p>
+  <p class="note">Type a name or number for a quick look, or open one at random. Every object has a page: 14,768 carry a convex shape model, and 1,659 have a period and folded lightcurve but no model, each stating why.</p>
   <div class="searchrow">
-    <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
+    <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Lanzia&hellip;" autocomplete="off">
     <button id="rand" type="button" title="Open a random asteroid from the catalog">Random asteroid</button>
   </div>
   <div id="hits"></div>
@@ -120,39 +113,32 @@
     <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table></div>
-  <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
-     catalog &rarr;</a> &mdash; all 16,427 objects, with filters and sorting.</p>
+  <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full catalog &rarr;</a> &mdash; all 16,427 objects, with filters and sorting.</p>
 
   <h2>The population</h2>
   <div class="figs">
     <figure><img src="assets/period_hist.png" alt="Distribution of rotation periods">
-      <figcaption>Rotation periods. 3,255 objects turn more slowly than once a day,
-      the regime ground-based photometry struggles to close.</figcaption></figure>
+      <figcaption>Rotation periods: 3,255 objects turn more slowly than once a day, the regime ground-based photometry struggles to close.</figcaption></figure>
     <figure><img src="assets/spin_size.png" alt="Spin rate against diameter">
-      <figcaption>Spin rate against size. The 2.2 hour barrier is where a loosely bound rubble pile
-      would fly apart; almost nothing sits above it.</figcaption></figure>
+      <figcaption>Spin rate vs size: Only 21 objects sit above the 2.2 hour spin barrier is where a loosely bound rubble pile would fly apart.</figcaption></figure>
     <figure><img src="assets/amplitude_period.png" alt="Lightcurve amplitude against period">
-      <figcaption>Amplitude against period. Larger amplitude means a more elongated body, since
-      a rounder one varies less as it turns.</figcaption></figure>
+      <figcaption>Amplitude vs period: Larger amplitudes imply more extreme aspect ratios.</figcaption></figure>
     <figure style="grid-column:1/-1"><img src="assets/orbital_elements.png"
         alt="Semi-major axis against inclination and eccentricity">
-      <figcaption>Where these asteroids orbit. The dashed lines are Jupiter mean-motion
-      resonances, which clear the Kirkwood gaps; clumps are collisional families. The catalog
-      samples the inner, middle and outer belt about equally.</figcaption></figure>
+      <figcaption>Orbital parameters: The dashed lines are Jupiter mean-motion resonances, which clear the Kirkwood gaps; clumps are collisional families. The catalog samples the inner, middle and outer belt about equally.</figcaption></figure>
   </div>
 
-  <h2>What you can download</h2>
-  <p class="note">Each object page carries its phase-folded lightcurve with per-bin
-     uncertainties, the full stacked photometry behind it, and a rotatable convex shape model
-     &mdash; all downloadable, and the shape model is synchronised to the lightcurve so you can
-     watch which face produces which feature.</p>
+  <h2>Available data products</h2>
+  <p class="note">Each object page carries its phase-folded lightcurve with per-bin uncertainties, the full stacked photometry behind it, and a rotatable convex shape model &mdash; all downloadable, and the shape model is synchronised to the lightcurve so you can watch which face produces which feature.</p>
+
+  <h2>Data and photometry</h2>
+  <p class="note">Every lightcurve here is measured from TESS full-frame images by <strong>TESSELLATE</strong>, an untargeted search for variable and non-sidereal sources across the TESS archive (<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025, AJ 170, 186</a>; doi:10.3847/1538-3881/adf21b). TESSELLATE builds on the difference-imaging reduction in <strong>TESSreduce</strong> (<a href="https://ui.adsabs.harvard.edu/abs/2021ascl.soft12016R/abstract">Ridden-Harper et al. 2021, ascl:2112.016</a>; <a href="https://arxiv.org/abs/2111.15006">arXiv:2111.15006</a>). Because TESS revisits the same field continuously, the resulting photometry is unusually well suited to rotation periods: the sampling is uniform and the coverage runs for weeks rather than hours.</p>
+
+  <h2>Shape models and credit</h2>
+  <p class="note">Shape models are produced by convex lightcurve inversion using <strong>convexinv</strong>, the implementation distributed with DAMIT. The method was developed by Kaasalainen &amp; Torppa (<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...24K/abstract">2001, Icarus 153, 24</a>; doi:10.1006/icar.2001.6673) and Kaasalainen, Torppa &amp; Muinonen (<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...37K/abstract">2001, Icarus 153, 37</a>; doi:10.1006/icar.2001.6674). The code and the Minkowski reconstruction that turns the fitted facet areas into a closed polyhedron are distributed through <strong>DAMIT</strong>, the Database of Asteroid Models from Inversion Techniques (<a href="https://ui.adsabs.harvard.edu/abs/2010A&amp;A...513A..46D/abstract">Ďurech, Sidorin &amp; Kaasalainen 2010, A&amp;A 513, A46</a>; doi:10.1051/0004-6361/200912693). The rotation periods, the reliability classification and the shape fits presented here are ours; the inversion method and code are not.</p>
 
   <div class="caveat">
-    <strong>Reading a shape model.</strong> Most of these asteroids were seen during a single
-    apparition, from one direction. That constrains the shape but not its orientation in space,
-    so the spin axis is assumed rather than measured and every page says so. Convex inversion
-    also cannot represent concavities, so models systematically under-reach the deepest minima.
-    The rotation periods, by contrast, are well determined.
+    <strong>Reading a shape model.</strong> Most of these asteroids were seen during a single apparition, from one direction. That constrains the shape but not its orientation in space, so the spin axis is assumed rather than measured, as indicated on each page. Convex inversion also cannot represent concavities, so models with sharp or complex minima fail to generate a shape model with convex. The rotation periods, by contrast, are well determined, and often more precise than the Light Curve Data Base (LCDB).
   </div>
 </main>
 <script>
