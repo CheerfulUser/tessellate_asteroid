@@ -99,6 +99,7 @@ idx = [dict(d=row.designation, k=row.key, p=round(float(row.period_hr), 4),
             l=None if pd.isna(row.published_rot_per_hr) else round(float(row.published_rot_per_hr), 4),
             y=row.sym,
             o=None if pd.isna(row.odd_over_even) else round(float(row.odd_over_even), 3),
+            m=None if pd.isna(row.odd_over_even) else round(1.0/(1.0+float(row.odd_over_even)), 3),
             g=bool(row.has_page))
        for row in r.itertuples()]
 json.dump(idx, open(f'{ROOT}/data/index.json', 'w'), separators=(',', ':'))
@@ -204,7 +205,7 @@ html = f'''<!doctype html><meta charset="utf-8">
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
-    <th data-k="o" tabindex="0" role="button" title="Odd-to-even harmonic power: low means the two maxima per rotation are alike">Symmetry</th>
+    <th data-k="m" tabindex="0" role="button" title="Even-harmonic power fraction: 1.00 means the two maxima per rotation are identical">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
   <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
@@ -250,18 +251,18 @@ let DATA=[], sortKey=null, sortDir=1;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const SYMLBL={{symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'}};
 function sym(o){{
-  if(!o.y) return '&mdash;';
-  const t=o.o==null?'':` title="odd/even harmonic power ${{o.o}}"`;
-  return `<span class="tag ${{o.y}}"${{t}}>${{SYMLBL[o.y]}}</span>`;
+  if(o.m==null) return '&mdash;';
+  const t=` title="${{SYMLBL[o.y]||''}} — even-harmonic power fraction ${{o.m}} (odd/even ratio ${{o.o}})"`;
+  return `<span class="tag ${{o.y}}"${{t}}>${{o.m.toFixed(2)}}</span>`;
 }}
 const PREVIEW=10;
-const LABEL={{d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',o:'symmetry',l:'LCDB period'}};
+const LABEL={{d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',m:'symmetry',l:'LCDB period'}};
 function render(list){{
   let note='';
   if(list.length>PREVIEW){{
     if(!sortKey) note=` — showing ${{PREVIEW}}`;
-    else if(sortKey==='o')                      // low odd/even = most symmetric
-      note=` — showing the ${{PREVIEW}} ${{sortDir>0?'most':'least'}} symmetric`;
+    else if(sortKey==='m')                      // high index = most symmetric
+      note=` — showing the ${{PREVIEW}} ${{sortDir>0?'least':'most'}} symmetric`;
     else note=` — showing the ${{PREVIEW}} ${{sortDir>0?'lowest':'highest'}} by `+LABEL[sortKey];
   }}
   hits.textContent=`${{list.length.toLocaleString()}} of ${{DATA.length.toLocaleString()}} objects`+note;
@@ -403,7 +404,7 @@ search = f'''<!doctype html><meta charset="utf-8">
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
-    <th data-k="o" tabindex="0" role="button" title="Odd-to-even harmonic power: low means the two maxima per rotation are alike">Symmetry</th>
+    <th data-k="m" tabindex="0" role="button" title="Even-harmonic power fraction: 1.00 means the two maxima per rotation are identical">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
 </main>
@@ -415,9 +416,9 @@ const CHUNK=300;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const SYMLBL={{symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'}};
 function sym(o){{
-  if(!o.y) return '&mdash;';
-  const t=o.o==null?'':` title="odd/even harmonic power ${{o.o}}"`;
-  return `<span class="tag ${{o.y}}"${{t}}>${{SYMLBL[o.y]}}</span>`;
+  if(o.m==null) return '&mdash;';
+  const t=` title="${{SYMLBL[o.y]||''}} — even-harmonic power fraction ${{o.m}} (odd/even ratio ${{o.o}})"`;
+  return `<span class="tag ${{o.y}}"${{t}}>${{o.m.toFixed(2)}}</span>`;
 }}
 function row(o){{
   const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`

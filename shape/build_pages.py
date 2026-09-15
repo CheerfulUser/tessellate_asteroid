@@ -60,6 +60,19 @@ SUNCAM = (_RCAM @ (np.cos(_a) * _ZC + np.sin(_a) * _XC)).tolist()
 _TINT = {'M': [1.00, 0.93, 0.82], 'S': [1.00, 0.90, 0.76], 'C': [1.00, 0.98, 0.96]}
 
 
+# Lightcurve symmetry: the even-harmonic power fraction, 1/(1+odd/even), bounded 0-1 where 1.00
+# means the two maxima per rotation are identical. Cuts match the catalog tables: an object is
+# monomodal below 0.431 (odd/even 1.32, the measured split against the pipeline's own
+# double_peaked flag) and symmetric at or above 0.800 (odd/even 0.25).
+def symmetry_cell(p):
+    oe = p.get('odd_over_even')
+    if oe is None:
+        return '&mdash;'
+    m = 1.0 / (1.0 + oe)
+    lab = 'monomodal' if m < 0.431 else ('symmetric' if m >= 0.800 else 'asymmetric')
+    return f'{m:.2f} <span class="sym-note">({lab})</span>'
+
+
 def stat(label, value):
     return (f'<div class="stat-row"><span class="stat-label">{label}</span>'
             f'<span class="stat-value">{value}</span></div>')
@@ -89,6 +102,7 @@ def build(path, phys):
     sol = ''.join([
         stat('Rotation period', f"{s['adopted_period_hr']:.5f} hours"),
         stat('Amplitude', f"{s['amplitude_mag']:.3f} mag" if s.get('amplitude_mag') else '&mdash;'),
+        stat('Lightcurve symmetry', symmetry_cell(p)),
         stat('Equatorial ratio', f"{s['equatorial_ratio']:.2f}" if s.get('equatorial_ratio') else '&mdash;'),
         stat('Polar / equatorial', f"{s['polar_ratio']:.2f}" if s.get('polar_ratio') else '&mdash;'),
         stat('Observations', f"{s['n_obs']:,} pts / {s['n_visits']} visits"),
@@ -172,6 +186,14 @@ def load_phys():
             spec=None if pd.isna(t.spec_type) else str(t.spec_type),
             H=None if pd.isna(t.magnitude_H) else float(t.magnitude_H),
             lcdb=None if pd.isna(t.published_rot_per_hr) else float(t.published_rot_per_hr))
+    try:
+        h = pd.read_csv(f'{Y34}/comparison_data/cluster_features.csv')[
+            ['designation', 'odd_over_even']]
+        for t in h.itertuples():
+            if t.designation in out and pd.notna(t.odd_over_even):
+                out[t.designation]['odd_over_even'] = float(t.odd_over_even)
+    except FileNotFoundError:
+        pass
     return out
 
 

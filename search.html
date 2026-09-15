@@ -81,7 +81,7 @@
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
-    <th data-k="o" tabindex="0" role="button" title="Odd-to-even harmonic power: low means the two maxima per rotation are alike">Symmetry</th>
+    <th data-k="m" tabindex="0" role="button" title="Even-harmonic power fraction: 1.00 means the two maxima per rotation are identical">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
 </main>
@@ -93,9 +93,9 @@ const CHUNK=300;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const SYMLBL={symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'};
 function sym(o){
-  if(!o.y) return '&mdash;';
-  const t=o.o==null?'':` title="odd/even harmonic power ${o.o}"`;
-  return `<span class="tag ${o.y}"${t}>${SYMLBL[o.y]}</span>`;
+  if(o.m==null) return '&mdash;';
+  const t=` title="${SYMLBL[o.y]||''} — even-harmonic power fraction ${o.m} (odd/even ratio ${o.o})"`;
+  return `<span class="tag ${o.y}"${t}>${o.m.toFixed(2)}</span>`;
 }
 function row(o){
   const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
@@ -157,7 +157,7 @@ window.addEventListener('scroll',()=>{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
 });
-fetch('data/index.json?v=0960302e').then(r=>r.json()).then(j=>{
+fetch('data/index.json?v=e26babf7').then(r=>r.json()).then(j=>{
   DATA=j; apply();
 }).catch(()=>{hits.textContent='Could not load the catalog index';});
 </script>

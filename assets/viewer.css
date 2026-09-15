@@ -53,3 +53,6 @@
 .dl a{font-size:11.5px;color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
 .dl a:hover{border-bottom-color:var(--accent)}
 .dl a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* qualitative label beside the numeric symmetry index in the solution panel */
+.sym-note{opacity:.62;font-size:11px}
