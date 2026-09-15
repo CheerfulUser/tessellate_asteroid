@@ -33,6 +33,11 @@ TARGETS = {
                      period_hr=5.357929509432807, tag='eurydike'),
     'deflotte': dict(name='(1295) Deflotte', lc=f'{Y34}/lcdb_lcs/stacked/1295_Deflotte_lc.csv',
                      period_hr=26.4384, tag='deflotte'),
+    # (3550) Link: aov_F 963, 5,224 pts, 69 well-covered cycles, reliability 0.99 -- one of the
+    # strongest lightcurves in the catalogue. LCDB gives 12.371 h (U=2), which the PDM null test
+    # cannot detect in our data at all (theta 1.004 against a random-period null of 1.002).
+    'link': dict(name='(3550) Link', lc=f'{Y34}/lcdb_lcs/stacked/3550_Link_lc.csv',
+                 period_hr=9.833578, tag='link'),
 }
 # Resolution of the convex model. NROWS sets the triangulation of the Gaussian image
 # (facets ~ 8*NROWS^2 + 2), HARM the degree/order of the spherical-harmonic expansion of the
