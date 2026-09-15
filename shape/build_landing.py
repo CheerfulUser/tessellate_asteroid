@@ -71,6 +71,18 @@ try:
     ho = pd.read_csv(f'{Y34}/comparison_data/cluster_features.csv')[
         ['designation', 'odd_over_even']]
     r = r.merge(ho, on='designation', how='left')
+    # cluster_features.csv holds the harmonics of the PRE-doubling fold for the 80 objects whose
+    # periods were doubled -- verified: their feature period is exactly half the catalogue period,
+    # while all 16,347 others match 1.0000. Using it unchanged reported those objects as
+    # monomodal when they are strongly symmetric at their adopted period. Override with values
+    # re-measured from the refit folded curves.
+    fix = pd.read_csv(f'{ROOT}/data/symmetry_doubled.csv')[['designation', 'odd_over_even']]
+    fix = fix.rename(columns={'odd_over_even': '_oe_fix'})
+    r = r.merge(fix, on='designation', how='left')
+    n_fix = int(r._oe_fix.notna().sum())
+    r['odd_over_even'] = r._oe_fix.where(r._oe_fix.notna(), r.odd_over_even)
+    r = r.drop(columns=['_oe_fix'])
+    print(f'  symmetry re-measured at the adopted period for {n_fix} doubled objects')
     oe = r.odd_over_even.replace([np.inf, -np.inf], np.nan)
     r['sym'] = np.where(oe.isna(), None,
                np.where(oe >= MONOMODAL_OE, 'monomodal',
