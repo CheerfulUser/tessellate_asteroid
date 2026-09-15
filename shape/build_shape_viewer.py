@@ -82,6 +82,12 @@ with np.errstate(divide='ignore', invalid='ignore'):
     _sem = np.sqrt(_var / np.maximum(cnt - 1, 1)) / np.sqrt(np.maximum(cnt, 1))
 lc_err = np.nan_to_num(_sem[ok]).tolist()
 
+# Peak-to-peak amplitude of the BINNED fold, in magnitudes. Binned rather than raw because the
+# raw extremes are set by the noisiest single points; magnitudes because that is the convention
+# the LCDB reports amplitudes in, so the two are directly comparable.
+_lf = np.array(lc_flux)
+AMP_MAG = float(-2.5 * np.log10(_lf.min() / _lf.max())) if len(_lf) and _lf.min() > 0 else float('nan')
+
 # convexinv's OWN fit, folded on the identical grid. Using the fit file rather than
 # re-simulating from the mesh guarantees the overlay is the model actually fitted to these
 # points -- same scattering law, phase function and per-session scaling.
@@ -266,7 +272,9 @@ html = f'''<title>{res['target']} Shape Model</title>
   <p class="sec" style="margin-top:0">Physical properties</p>
   {PHYS}
   <p class="sec">TESSELLATE solution</p>
-  <div class="stat-row"><span class="stat-label">Rotation period</span><span class="stat-value">{res['representative_period_hr']:.5f} hr</span></div>
+  <div class="stat-row"><span class="stat-label">Rotation period</span><span class="stat-value">{res['adopted_period_hr']:.5f} hr</span></div>
+  <div class="stat-row"><span class="stat-label">Amplitude</span><span class="stat-value">{AMP_MAG:.3f} mag</span></div>
+  <div class="stat-row"><span class="stat-label">Axis ratios <em>a/b</em>, <em>b/c</em></span><span class="stat-value">{res.get('bbox_a_over_b',float('nan')):.2f}, {res.get('bbox_b_over_c',float('nan')):.2f}</span></div>
   <div class="stat-row"><span class="stat-label">Observations</span><span class="stat-value">{res['n_observations']:,} pts / {res['n_sessions']} visits</span></div>
   <div class="stat-row"><span class="stat-label">Baseline</span><span class="stat-value">{res.get('baseline_days',0):.1f} d</span></div>
   <div class="stat-row"><span class="stat-label">Phase-angle range</span><span class="stat-value">{res['phase_angle_range_deg']:.2f} deg</span></div>
@@ -284,10 +292,6 @@ html = f'''<title>{res['target']} Shape Model</title>
 </div>
 
 <div class="panel ctrl">
-  <div class="row" role="group" aria-label="Surface colouring">
-    <button class="btn" id="cAlb" aria-pressed="true">Shaded</button>
-    <button class="btn" id="cTrue" aria-pressed="false">True colour</button>
-  </div>
   <div class="row" role="group" aria-label="Rotation mode">
     <button class="btn" id="mLock" aria-pressed="true">Locked to axis</button>
     <button class="btn" id="mFree" aria-pressed="false">Free rotate</button>
@@ -387,9 +391,18 @@ function draw(){{
   }});
   const faces = D.facets.map((f,i)=>{{
     const p=f.map(k=>P[k]);
-    const u=[p[1][0]-p[0][0],p[1][1]-p[0][1],p[1][2]-p[0][2]];
-    const vv=[p[2][0]-p[0][0],p[2][1]-p[0][1],p[2][2]-p[0][2]];
-    let n=[u[1]*vv[2]-u[2]*vv[1], u[2]*vv[0]-u[0]*vv[2], u[0]*vv[1]-u[1]*vv[0]];
+    // NEWELL'S METHOD, summed over every edge. Faces here are polygons of 4-9 vertices, and
+    // taking the normal from just the first three is badly conditioned: 180 of Eurydike's 289
+    // faces have a near-collinear leading triplet (face 258: cross product 2.6e-5 against a
+    // true area of 0.12). The resulting direction is numerically arbitrary and jitters between
+    // frames, flipping both the shading and the backface test -- that was the flickering facet.
+    let n=[0,0,0];
+    for(let k=0;k<p.length;k++){{
+      const a=p[k], b=p[(k+1)%p.length];
+      n[0]+=(a[1]-b[1])*(a[2]+b[2]);
+      n[1]+=(a[2]-b[2])*(a[0]+b[0]);
+      n[2]+=(a[0]-b[0])*(a[1]+b[1]);
+    }}
     const nl=Math.hypot(...n)||1; n=n.map(c=>c/nl);
     const cz=p.reduce((s,q)=>s+q[2],0)/p.length;
     const cen=[p.reduce((s,q)=>s+q[0],0)/p.length,p.reduce((s,q)=>s+q[1],0)/p.length,cz];
@@ -397,6 +410,7 @@ function draw(){{
     return {{p,n,cz,i}};
   }}).filter(f=>f.n[2]>0).sort((A,B)=>A.cz-B.cz);
   for(const f of faces){{
+
     // In locked mode light the body from the real Sun direction, so the terminator is where
     // TESS saw it; in free mode there is no meaningful illumination geometry, so shade from
     // the camera instead.
@@ -516,28 +530,10 @@ function setMode(m){{
   if(lock) orient = D.camQ.slice();   // snap to the TESS viewing geometry
   draw();
 }}
-const cAlb=document.getElementById('cAlb'), cTrue=document.getElementById('cTrue');
-const bar=document.getElementById('bar'), lolab=document.getElementById('lolab'),
-      hilab=document.getElementById('hilab'), leglab=document.getElementById('leglab');
-const setTxt=(el,t)=>{{ if(el) el.textContent=t; }};
-function setColour(m){{
-  colourMode=m;
-  cAlb.setAttribute('aria-pressed', m==='albedo'?'true':'false');
-  cTrue.setAttribute('aria-pressed', m==='true'?'true':'false');
-  if(m==='true'){{
-    if(bar){{ const c=trueColour(1.0);
-      bar.style.background=`rgb(${{Math.round(c[0])}},${{Math.round(c[1])}},${{Math.round(c[2])}})`; }}
-    setTxt(lolab,''); setTxt(hilab,'');
-    setTxt(leglab,'');
-  }} else {{
-    if(bar) bar.style.background='#6b7280';
-    setTxt(lolab,''); setTxt(hilab,'');
-    setTxt(leglab,'');
-  }}
-  draw();
-}}
-cAlb.addEventListener('click', ()=>setColour('albedo'));
-cTrue.addEventListener('click', ()=>setColour('true'));
+// Surface-colouring toggle removed: it gave the mesh and the info table more room, and
+// with the per-facet albedo map disabled the two modes differed only by a flat tint.
+// setColour is kept as a no-op so the existing init call needs no special-casing.
+function setColour(){{ colourMode='albedo'; draw(); }}
 mFree.addEventListener('click', ()=>setMode('free'));
 mLock.addEventListener('click', ()=>setMode('locked'));
 slider.addEventListener('input', ()=>{{ setPhase(slider.value/1000); if(!spinning) draw(); }});
