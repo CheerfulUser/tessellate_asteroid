@@ -114,7 +114,7 @@ idx = [dict(d=row.designation, k=row.key, p=round(float(row.period_hr), 4),
             y=row.sym,
             o=None if pd.isna(row.odd_over_even) else round(float(row.odd_over_even), 3),
             m=None if pd.isna(row.odd_over_even) else round((1.0-float(row.odd_over_even))/(1.0+float(row.odd_over_even)), 3),
-            g=bool(row.has_page))
+            g=bool(row.key in _shape_keys))      # has a SHAPE MODEL; every object has a page
        for row in r.itertuples()]
 json.dump(idx, open(f'{ROOT}/data/index.json', 'w'), separators=(',', ':'))
 # Cache-bust the data URL with a content hash. The pages fetch index.json from a fixed path, so
@@ -196,7 +196,10 @@ html = f'''<!doctype html><meta charset="utf-8">
   .tag.asymmetric{{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}}
   .tag.monomodal{{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}}
   td a:hover{{text-decoration:underline}}
-  .nopage{{color:var(--text-dim)}}
+  /* every object links now; this marks the ones whose page has a lightcurve but no
+     shape model, so the table still shows the distinction the filter acts on */
+  td a.nomodel{{color:var(--text-dim)}}
+  td a.nomodel:hover{{color:var(--accent)}}
   a.more{{color:var(--accent);text-decoration:none;font-weight:600}}
   a.more:hover{{text-decoration:underline}}
   .caveat{{margin-top:30px;padding:13px 15px;border-radius:8px;background:#e0a4581a;
@@ -295,8 +298,7 @@ function render(list){{
   }}
   hits.textContent=`${{list.length.toLocaleString()}} of ${{DATA.length.toLocaleString()}} objects`+note;
   rows.innerHTML=list.slice(0,PREVIEW).map(o=>{{
-    const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`
-                  :`<span class="nopage">${{o.d}}</span>`;
+    const name=`<a href="asteroid/${{o.k}}.html"${{o.g?'':' class="nomodel"'}}>${{o.d}}</a>`;
     return `<tr><td>${{name}}</td><td>${{fmt(o.p,4)}}</td><td>${{fmt(o.a,3)}}</td>`+
            `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{sym(o)}}</td>`+
            `<td>${{fmt(o.l,4)}}</td></tr>`;
@@ -342,7 +344,7 @@ document.getElementById('rand').addEventListener('click',()=>{{
   window.location.href = `asteroid/${{o.k}}.html`;
 }});
 fetch(IDX_URL).then(r=>r.json()).then(j=>{{
-  DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));
+  DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));   // modelled first
   apply();
 }}).catch(()=>{{hits.textContent='could not load the catalog index';}});
 </script>
@@ -406,7 +408,10 @@ search = f'''<!doctype html><meta charset="utf-8">
   .tag.asymmetric{{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}}
   .tag.monomodal{{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}}
   td a:hover{{text-decoration:underline}}
-  .nopage{{color:var(--text-dim)}}
+  /* every object links now; this marks the ones whose page has a lightcurve but no
+     shape model, so the table still shows the distinction the filter acts on */
+  td a.nomodel{{color:var(--text-dim)}}
+  td a.nomodel:hover{{color:var(--accent)}}
 </style>
 <main>
   <a class="home" href="index.html">&larr; Catalog home</a>
@@ -455,8 +460,7 @@ function sym(o){{
   return `<span class="tag ${{o.y}}"${{t}}>${{o.m>0?'+':''}}${{o.m.toFixed(2)}}</span>`;
 }}
 function row(o){{
-  const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`
-                :`<span class="nopage">${{o.d}}</span>`;
+  const name=`<a href="asteroid/${{o.k}}.html"${{o.g?'':' class="nomodel"'}}>${{o.d}}</a>`;
   return `<tr><td>${{name}}</td><td>${{fmt(o.p,4)}}</td><td>${{fmt(o.a,3)}}</td>`+
          `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{sym(o)}}</td>`+
          `<td>${{fmt(o.l,4)}}</td></tr>`;

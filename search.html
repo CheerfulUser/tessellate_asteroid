@@ -49,7 +49,10 @@
   .tag.asymmetric{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}
   .tag.monomodal{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}
   td a:hover{text-decoration:underline}
-  .nopage{color:var(--text-dim)}
+  /* every object links now; this marks the ones whose page has a lightcurve but no
+     shape model, so the table still shows the distinction the filter acts on */
+  td a.nomodel{color:var(--text-dim)}
+  td a.nomodel:hover{color:var(--accent)}
 </style>
 <main>
   <a class="home" href="index.html">&larr; Catalog home</a>
@@ -98,8 +101,7 @@ function sym(o){
   return `<span class="tag ${o.y}"${t}>${o.m>0?'+':''}${o.m.toFixed(2)}</span>`;
 }
 function row(o){
-  const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
-                :`<span class="nopage">${o.d}</span>`;
+  const name=`<a href="asteroid/${o.k}.html"${o.g?'':' class="nomodel"'}>${o.d}</a>`;
   return `<tr><td>${name}</td><td>${fmt(o.p,4)}</td><td>${fmt(o.a,3)}</td>`+
          `<td>${fmt(o.s,1)}</td><td>${o.t||'&mdash;'}</td><td>${sym(o)}</td>`+
          `<td>${fmt(o.l,4)}</td></tr>`;
@@ -188,7 +190,7 @@ function restoreState(){
 window.addEventListener('pagehide', saveState);
 document.addEventListener('click', e=>{ if(e.target.closest('#rows a')) saveState(); });
 
-fetch('data/index.json?v=5a2dd8bd').then(r=>r.json()).then(j=>{
+fetch('data/index.json?v=0fdb04f6').then(r=>r.json()).then(j=>{
   DATA=j;
   const v=restoreState();
   apply();

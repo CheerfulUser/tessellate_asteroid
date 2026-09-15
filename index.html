@@ -60,7 +60,10 @@
   .tag.asymmetric{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}
   .tag.monomodal{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}
   td a:hover{text-decoration:underline}
-  .nopage{color:var(--text-dim)}
+  /* every object links now; this marks the ones whose page has a lightcurve but no
+     shape model, so the table still shows the distinction the filter acts on */
+  td a.nomodel{color:var(--text-dim)}
+  td a.nomodel:hover{color:var(--accent)}
   a.more{color:var(--accent);text-decoration:none;font-weight:600}
   a.more:hover{text-decoration:underline}
   .caveat{margin-top:30px;padding:13px 15px;border-radius:8px;background:#e0a4581a;
@@ -136,7 +139,7 @@
   </div>
 </main>
 <script>
-const IDX_URL='data/index.json?v=5a2dd8bd';
+const IDX_URL='data/index.json?v=0fdb04f6';
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
       q=document.getElementById('q');
 let DATA=[], sortKey=null, sortDir=1;
@@ -159,8 +162,7 @@ function render(list){
   }
   hits.textContent=`${list.length.toLocaleString()} of ${DATA.length.toLocaleString()} objects`+note;
   rows.innerHTML=list.slice(0,PREVIEW).map(o=>{
-    const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
-                  :`<span class="nopage">${o.d}</span>`;
+    const name=`<a href="asteroid/${o.k}.html"${o.g?'':' class="nomodel"'}>${o.d}</a>`;
     return `<tr><td>${name}</td><td>${fmt(o.p,4)}</td><td>${fmt(o.a,3)}</td>`+
            `<td>${fmt(o.s,1)}</td><td>${o.t||'&mdash;'}</td><td>${sym(o)}</td>`+
            `<td>${fmt(o.l,4)}</td></tr>`;
@@ -206,7 +208,7 @@ document.getElementById('rand').addEventListener('click',()=>{
   window.location.href = `asteroid/${o.k}.html`;
 });
 fetch(IDX_URL).then(r=>r.json()).then(j=>{
-  DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));
+  DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));   // modelled first
   apply();
 }).catch(()=>{hits.textContent='could not load the catalog index';});
 </script>
