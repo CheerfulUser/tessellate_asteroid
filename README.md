@@ -29,7 +29,11 @@ offline. `web/asteroid/75_Eurydike.html` is the reference example.
 bin and the point count. Where a shape model exists, the convex model's own fitted lightcurve is
 included on the same phase grid for overlay.
 
-**Shape models.** Convex inversion (DAMIT `convexinv`), 289 facets. Single-apparition data does
+**Shape models.** Convex inversion (DAMIT `convexinv`), 289 facets, with the polyhedron
+reconstructed by DAMIT's `minkowski` (build it from `DAMIT-convex/fortran/minkowski.f`). The
+Python `polyhedrec` fallback is kept but is far weaker: on (1295) Deflotte at 289 facets it
+failed at every starting scale after 33 minutes, where `minkowski` solved the same Gaussian
+image in 0.79 s. Single-apparition data does
 not constrain the pole -- solutions from different starting poles scatter by 100 degrees or more
 -- so the shape is meaningful while its orientation is not. `lambda_circ_std_deg` records the
 spread on every solution and should be read before trusting an orientation.

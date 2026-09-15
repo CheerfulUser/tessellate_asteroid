@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(HERE, 'polyhedrec')); sys.path.insert(0, HERE)
 from polyhedrec_fast import reconstruct_fast  # noqa: E402
 
 CONVEXINV = os.path.join(HERE, 'DAMIT-convex/convexinv/convexinv')
+MINKOWSKI = os.path.join(HERE, 'DAMIT-convex/minkowski')
 Y34 = '/Users/rridden/Documents/work/code/tess/asteroid/y3_4'
 
 TARGETS = {
@@ -111,6 +112,35 @@ def run(cp, lcs, sp, pp, fp):
     return lam, bet, per
 
 
+def minkowski_reconstruct(shape_path):
+    """Reconstruct the polyhedron with DAMIT's own minkowski, falling back to polyhedrec.
+
+    This is Kaasalainen's original Fortran solver and it is dramatically better than the Python
+    root-finder for this job. On (1295) Deflotte at 289 facets, polyhedrec failed at every one
+    of seven starting scales after 33 minutes of CPU; minkowski solved the same Gaussian image
+    in 0.79 s, returning 574 vertices with all 289 faces convex. That difference decides whether
+    a 16,000-object batch is hours or weeks, and whether it silently loses objects.
+
+    It reads the FACETS file convexinv already writes, so no conversion is needed.
+    """
+    if not os.path.exists(MINKOWSKI):
+        return None
+    try:
+        with open(shape_path) as fin:
+            r = subprocess.run([MINKOWSKI], stdin=fin, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=600)
+        L = [l.split() for l in r.stdout.decode().splitlines() if l.strip()]
+        nv, nf = int(L[0][0]), int(L[0][1])
+        V = np.array([[float(x) for x in L[1 + i]] for i in range(nv)])
+        i, F = 1 + nv, []
+        while len(F) < nf:
+            F.append([int(x) - 1 for x in L[i + 1]])   # Fortran is 1-indexed
+            i += 2
+        return V - V.mean(axis=0), F
+    except Exception:
+        return None
+
+
 def areas_normals(path):
     L = [l.strip() for l in open(path) if l.strip()]
     n = int(L[0]); a, nor, i = [], [], 1
@@ -180,6 +210,13 @@ def main(key):
     else:
         print(f'\nfit file has {len(model)} rows vs {len(obs)} obs -- residuals skipped')
 
+    mk = minkowski_reconstruct(best['shape'])
+    if mk is not None:
+        verts_arr, facets_list = mk
+        print(f'  mesh via DAMIT minkowski: {len(verts_arr)} verts, {len(facets_list)} facets')
+    else:
+        verts_arr = facets_list = None
+        print('  DAMIT minkowski unavailable/failed -- falling back to polyhedrec')
     nor, ar = areas_normals(best['shape'])
     # Minkowski reconstruction is sensitive to the starting scale D and simply fails for some
     # values -- at 289 facets the natural choice (equal-area sphere radius) does not converge
@@ -187,7 +224,7 @@ def main(key):
     # already succeeded by this point and only the mesh build is at risk.
     D0 = (sum(ar) / (4 * np.pi)) ** 0.5
     Pm = None
-    for fac in (1.0, 1.25, 0.8, 1.6, 0.6, 2.5, 0.4):
+    for fac in (() if verts_arr is not None else (1.0, 1.25, 0.8, 1.6, 0.6, 2.5, 0.4)):
         try:
             Pm = reconstruct_fast(nor, ar, D=D0 * fac, options={'rtol': 1e-4, 'atol': 1e-7})
             if fac != 1.0:
@@ -195,11 +232,30 @@ def main(key):
             break
         except Exception:
             continue
-    if Pm is None:
-        print('  mesh reconstruction FAILED at every D -- inversion results still written')
-        Pm = None
-    v = np.array(Pm.vertices); v = v - v.mean(axis=0)
-    fc = [list(f.vertices) for f in Pm.faces]
+    if Pm is None and verts_arr is None:
+        # Bail cleanly: the inversion succeeded and its period/pole results are worth keeping,
+        # but there is no mesh, and falling through to Pm.vertices crashed the whole run.
+        print('  mesh reconstruction FAILED at every D -- writing results without a mesh')
+        json.dump(dict(target=C['name'], n_observations=int(len(df)), n_sessions=int(nses),
+                       adopted_period_hr=C['period_hr'], baseline_days=float(span),
+                       phase_angle_range_deg=float(df.phase_angle_deg.max()
+                                                   - df.phase_angle_deg.min()),
+                       all_solutions=[dict(start_lambda=x['start'][0], start_beta=x['start'][1],
+                                           lambda_deg=x['lam'], beta_deg=x['bet'],
+                                           period_hr=x['per']) for x in sols],
+                       representative_lambda_deg=best['lam'],
+                       representative_beta_deg=best['bet'],
+                       representative_period_hr=best['per'],
+                       lambda_circ_std_deg=float(lcs_std), beta_std_deg=float(bet.std()),
+                       starts_converged=bool(conv), recovered_facets=None,
+                       mesh_failed=True),
+                  open(os.path.join(HERE, f'{tag}_results.json'), 'w'), indent=2)
+        return
+    if verts_arr is not None:
+        v, fc = verts_arr, facets_list
+    else:
+        v = np.array(Pm.vertices); v = v - v.mean(axis=0)
+        fc = [list(f.vertices) for f in Pm.faces]
     ext = np.sort(v.max(axis=0) - v.min(axis=0))[::-1]
     print(f'representative: lambda={best["lam"]:.2f} beta={best["bet"]:+.2f} '
           f'P={best["per"]:.6f} h, {len(fc)} facets, a/b={ext[0]/ext[1]:.3f} b/c={ext[1]/ext[2]:.3f}')
