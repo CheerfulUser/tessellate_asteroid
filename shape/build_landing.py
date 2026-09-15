@@ -55,6 +55,30 @@ try:
 except FileNotFoundError:
     r['asymmetry'] = np.nan; r['outlier_rank'] = np.nan
 
+# Lightcurve symmetry, from the ratio of odd- to even-harmonic power in the Fourier fit.
+# A rotating triaxial body gives two near-identical maxima per cycle -- pure even harmonics;
+# odd power is what makes the two halves differ.
+#
+# The monomodal cut is measured, not chosen: objects the pipeline independently flagged
+# double_peaked=False sit at median odd/even 2.57 against 0.35 for the rest, and 1.32 separates
+# the two populations at 99.3%. The symmetric/asymmetric cut at 0.25 is the lower quartile of
+# the double-peaked population, so "asymmetric" means visibly uneven maxima rather than a
+# physical threshold. Independent check: the most elongated bodies (amplitude > 0.5 mag) are
+# also the most symmetric, median 0.19, as a triaxial ellipsoid should be.
+MONOMODAL_OE = 1.32
+SYMMETRIC_OE = 0.25
+try:
+    ho = pd.read_csv(f'{Y34}/comparison_data/cluster_features.csv')[
+        ['designation', 'odd_over_even']]
+    r = r.merge(ho, on='designation', how='left')
+    oe = r.odd_over_even.replace([np.inf, -np.inf], np.nan)
+    r['sym'] = np.where(oe.isna(), None,
+               np.where(oe >= MONOMODAL_OE, 'monomodal',
+               np.where(oe < SYMMETRIC_OE, 'symmetric', 'asymmetric')))
+except FileNotFoundError:
+    r['odd_over_even'] = np.nan; r['sym'] = None
+print('  symmetry: ' + ', '.join(f'{k}={v:,}' for k, v in r.sym.value_counts().items()))
+
 have_page = {f[:-5] for f in os.listdir(f'{ROOT}/asteroid')} if os.path.isdir(f'{ROOT}/asteroid') else set()
 r['key'] = r.designation.map(sn)
 r['has_page'] = r.key.isin(have_page)
@@ -73,6 +97,8 @@ idx = [dict(d=row.designation, k=row.key, p=round(float(row.period_hr), 4),
             t=None if pd.isna(row.spec_type) else str(row.spec_type),
             c=complex_of(None if pd.isna(row.spec_type) else row.spec_type),
             l=None if pd.isna(row.published_rot_per_hr) else round(float(row.published_rot_per_hr), 4),
+            y=row.sym,
+            o=None if pd.isna(row.odd_over_even) else round(float(row.odd_over_even), 3),
             g=bool(row.has_page))
        for row in r.itertuples()]
 json.dump(idx, open(f'{ROOT}/data/index.json', 'w'), separators=(',', ':'))
@@ -132,6 +158,13 @@ html = f'''<!doctype html><meta charset="utf-8">
   th:first-child,td:first-child{{text-align:left}}
   tbody tr:hover{{background:#161d2b}}
   td a{{color:var(--accent);text-decoration:none}}
+  /* symmetry tags. No yellow; each tint reads on the dark ground and the label carries the
+     meaning, so the colour is reinforcement rather than the only encoding. */
+  .tag{{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;
+    letter-spacing:.02em;white-space:nowrap;border:1px solid transparent}}
+  .tag.symmetric{{color:#5ec8b4;background:rgba(94,200,180,.11);border-color:rgba(94,200,180,.28)}}
+  .tag.asymmetric{{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}}
+  .tag.monomodal{{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}}
   td a:hover{{text-decoration:underline}}
   .nopage{{color:var(--text-dim)}}
   a.more{{color:var(--accent);text-decoration:none;font-weight:600}}
@@ -166,6 +199,7 @@ html = f'''<!doctype html><meta charset="utf-8">
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
+    <th data-k="o" tabindex="0" role="button" title="Odd-to-even harmonic power: low means the two maxima per rotation are alike">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
   <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
@@ -209,20 +243,29 @@ const rows=document.getElementById('rows'), hits=document.getElementById('hits')
       q=document.getElementById('q');
 let DATA=[], sortKey=null, sortDir=1;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
+const SYMLBL={{symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'}};
+function sym(o){{
+  if(!o.y) return '&mdash;';
+  const t=o.o==null?'':` title="odd/even harmonic power ${{o.o}}"`;
+  return `<span class="tag ${{o.y}}"${{t}}>${{SYMLBL[o.y]}}</span>`;
+}}
 const PREVIEW=10;
-const LABEL={{d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',l:'LCDB period'}};
+const LABEL={{d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',o:'symmetry',l:'LCDB period'}};
 function render(list){{
   let note='';
-  if(list.length>PREVIEW)
-    note = sortKey ? ` — showing the ${{PREVIEW}} ${{sortDir>0?'lowest':'highest'}} by `
-                     + LABEL[sortKey]
-                   : ` — showing ${{PREVIEW}}`;
+  if(list.length>PREVIEW){{
+    if(!sortKey) note=` — showing ${{PREVIEW}}`;
+    else if(sortKey==='o')                      // low odd/even = most symmetric
+      note=` — showing the ${{PREVIEW}} ${{sortDir>0?'most':'least'}} symmetric`;
+    else note=` — showing the ${{PREVIEW}} ${{sortDir>0?'lowest':'highest'}} by `+LABEL[sortKey];
+  }}
   hits.textContent=`${{list.length.toLocaleString()}} of ${{DATA.length.toLocaleString()}} objects`+note;
   rows.innerHTML=list.slice(0,PREVIEW).map(o=>{{
     const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`
                   :`<span class="nopage">${{o.d}}</span>`;
     return `<tr><td>${{name}}</td><td>${{fmt(o.p,4)}}</td><td>${{fmt(o.a,3)}}</td>`+
-           `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{fmt(o.l,4)}}</td></tr>`;
+           `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{sym(o)}}</td>`+
+           `<td>${{fmt(o.l,4)}}</td></tr>`;
   }}).join('');
 }}
 function apply(){{
@@ -315,6 +358,13 @@ search = f'''<!doctype html><meta charset="utf-8">
   th:first-child,td:first-child{{text-align:left}}
   tbody tr:hover{{background:#161d2b}}
   td a{{color:var(--accent);text-decoration:none}}
+  /* symmetry tags. No yellow; each tint reads on the dark ground and the label carries the
+     meaning, so the colour is reinforcement rather than the only encoding. */
+  .tag{{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;
+    letter-spacing:.02em;white-space:nowrap;border:1px solid transparent}}
+  .tag.symmetric{{color:#5ec8b4;background:rgba(94,200,180,.11);border-color:rgba(94,200,180,.28)}}
+  .tag.asymmetric{{color:#e09a5a;background:rgba(224,154,90,.11);border-color:rgba(224,154,90,.28)}}
+  .tag.monomodal{{color:#b294e0;background:rgba(178,148,224,.12);border-color:rgba(178,148,224,.30)}}
   td a:hover{{text-decoration:underline}}
   .nopage{{color:var(--text-dim)}}
 </style>
@@ -348,6 +398,7 @@ search = f'''<!doctype html><meta charset="utf-8">
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
+    <th data-k="o" tabindex="0" role="button" title="Odd-to-even harmonic power: low means the two maxima per rotation are alike">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
 </main>
@@ -357,11 +408,18 @@ const rows=document.getElementById('rows'), hits=document.getElementById('hits')
 let DATA=[], VIEW=[], sortKey='d', sortDir=1, shown=0;
 const CHUNK=300;
 const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
+const SYMLBL={{symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'}};
+function sym(o){{
+  if(!o.y) return '&mdash;';
+  const t=o.o==null?'':` title="odd/even harmonic power ${{o.o}}"`;
+  return `<span class="tag ${{o.y}}"${{t}}>${{SYMLBL[o.y]}}</span>`;
+}}
 function row(o){{
   const name=o.g?`<a href="asteroid/${{o.k}}.html">${{o.d}}</a>`
                 :`<span class="nopage">${{o.d}}</span>`;
   return `<tr><td>${{name}}</td><td>${{fmt(o.p,4)}}</td><td>${{fmt(o.a,3)}}</td>`+
-         `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{fmt(o.l,4)}}</td></tr>`;
+         `<td>${{fmt(o.s,1)}}</td><td>${{o.t||'&mdash;'}}</td><td>${{sym(o)}}</td>`+
+         `<td>${{fmt(o.l,4)}}</td></tr>`;
 }}
 // windowed rendering: the full list stays in memory, the DOM only grows as you scroll,
 // so 16,000 rows do not have to be laid out at once
