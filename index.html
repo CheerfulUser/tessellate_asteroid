@@ -12,6 +12,13 @@
   .card:hover{border-color:var(--accent)}
   .card .n{font-size:15px;font-weight:600}
   .card .m{font-size:12px;color:var(--text-dim);font-family:"IBM Plex Mono",monospace;margin-top:3px}
+  h2{font-size:15px;font-weight:600;margin:34px 0 8px;letter-spacing:-0.01em}
+  section p{color:var(--text-dim);font-size:13px;line-height:1.65;margin:0 0 12px}
+  dl{margin:0 0 4px;font-size:13px;line-height:1.6}
+  dt{color:var(--text);font-weight:600;margin-top:10px}
+  dd{color:var(--text-dim);margin:2px 0 0 0}
+  code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;
+    background:#1b2130;padding:1px 5px;border-radius:4px;color:var(--accent)}
   .note{margin-top:28px;padding:12px 14px;border-radius:7px;background:#e0a4581a;
     border:1px solid #e0a45840;font-size:12.5px;line-height:1.55;color:#e8c99a}
 </style>
@@ -26,6 +33,48 @@
   <a class="card" href="asteroid/1295_Deflotte.html">
     <div class="n">(1295) Deflotte</div>
     <div class="m">P = 26.44724 h &middot; A = 0.373 mag &middot; 47.4 km</div></a>
+  <section>
+    <h2>About the catalogue</h2>
+    <p>TESS observes a 24&deg;&times;96&deg; strip of sky continuously for roughly a month at a
+       time. Asteroids drift through that field, and the TESSELLATE reduction extracts their
+       photometry from the full-frame images. The result is unusually long, uninterrupted
+       coverage: baselines of weeks to months, spanning hundreds of rotations, where
+       ground-based photometry is broken by daylight and weather.</p>
+    <p>That matters most for two things. Slow rotators whose period exceeds a single night are
+       recoverable here. And because the baseline covers so many cycles, the period itself is
+       pinned far more tightly &mdash; for (75) Eurydike, to roughly 25 seconds over 1,751
+       rotations.</p>
+
+    <h2>Data products</h2>
+    <dl>
+      <dt>Phase-folded lightcurve</dt>
+      <dd>Stacked photometry folded at the adopted period and binned, with the standard error on
+          each bin. Plotted on every object page and downloadable as JSON.</dd>
+      <dt>Full stacked lightcurve</dt>
+      <dd>The complete per-epoch photometry behind the fold, geometry-corrected and normalised
+          per visit. Gzipped CSV, for anyone refitting the period or modelling the object
+          independently.</dd>
+      <dt>Convex shape model</dt>
+      <dd>Derived by convex inversion (DAMIT <code>convexinv</code>) at 289 facets. Rotatable in
+          the browser, synchronised to the lightcurve, and downloadable as a JSON mesh.</dd>
+    </dl>
+
+    <h2>How to read a shape model</h2>
+    <p>Most of these asteroids were observed during a single apparition, from one viewing
+       direction. That constrains the <em>shape</em> but not its <em>orientation in space</em>:
+       running the inversion from different starting poles returns solutions scattered by a
+       hundred degrees or more. Every object page reports that scatter as the pole spread, and
+       it should be read before trusting an orientation. The rotation period, by contrast, is
+       well determined.</p>
+
+    <h2>Relationship to the LCDB</h2>
+    <p>Where an asteroid already has a published period in the Asteroid Lightcurve Database, both
+       values are shown. Agreement is common; where the two differ it is usually the
+       double-peaked ambiguity, since an elongated body shows two maxima per rotation and a
+       periodogram can lock onto either. A smaller number are cases where the literature period
+       leaves no trace in the TESS photometry at all.</p>
+  </section>
+
   <div class="note">Preview build. The full catalogue and the population figures and search are
      still being generated; two objects are published here as examples of the page format.</div>
 </main>
