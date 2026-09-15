@@ -9,7 +9,7 @@ Only objects that actually have a page are linked. The rest of the catalog is se
 its numbers are shown, but a link is only rendered where a shape model exists, so nobody follows
 a dead URL.
 """
-import json, os, re, sys
+import hashlib, json, os, re, sys
 import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -102,6 +102,11 @@ idx = [dict(d=row.designation, k=row.key, p=round(float(row.period_hr), 4),
             g=bool(row.has_page))
        for row in r.itertuples()]
 json.dump(idx, open(f'{ROOT}/data/index.json', 'w'), separators=(',', ':'))
+# Cache-bust the data URL with a content hash. The pages fetch index.json from a fixed path, so
+# a returning visitor's browser happily serves the previous copy against the new HTML -- which
+# renders as a column of em-dashes for any field the old file predates. The hash changes only
+# when the data does, so unchanged builds still hit cache.
+IDXV = hashlib.sha1(open(f'{ROOT}/data/index.json', 'rb').read()).hexdigest()[:8]
 print(f'  index.json {os.path.getsize(f"{ROOT}/data/index.json")/1024:.0f} KB')
 
 S = dict(n=len(r), new=int(r.published_rot_per_hr.isna().sum()),
@@ -238,7 +243,7 @@ html = f'''<!doctype html><meta charset="utf-8">
   </div>
 </main>
 <script>
-const IDX_URL='data/index.json';
+const IDX_URL='data/index.json?v={IDXV}';
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
       q=document.getElementById('q');
 let DATA=[], sortKey=null, sortDir=1;
@@ -474,7 +479,7 @@ window.addEventListener('scroll',()=>{{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
 }});
-fetch('data/index.json').then(r=>r.json()).then(j=>{{
+fetch('data/index.json?v={IDXV}').then(r=>r.json()).then(j=>{{
   DATA=j; apply();
 }}).catch(()=>{{hits.textContent='Could not load the catalog index';}});
 </script>
