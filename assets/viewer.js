@@ -144,16 +144,20 @@ function draw(){
     // In locked mode light the body from the real Sun direction, so the terminator is where
     // TESS saw it; in free mode there is no meaningful illumination geometry, so shade from
     // the camera instead.
+    // Ambient floor raised from 0.18. At 0.18 an unlit facet rendered at about RGB 26 against a
+    // background of 17 -- indistinguishable, so facets crossing the terminator read as HOLES in
+    // the body rather than as its night side. 0.34 keeps the terminator obvious while leaving
+    // the dark side clearly part of the object.
     const lit = (mode==='locked')
-      ? 0.18 + 0.82*Math.max(0, f.n[0]*D.sunCam[0]+f.n[1]*D.sunCam[1]+f.n[2]*D.sunCam[2])
-      : 0.25 + 0.75*Math.max(0, f.n[2]);
+      ? 0.34 + 0.66*Math.max(0, f.n[0]*D.sunCam[0]+f.n[1]*D.sunCam[1]+f.n[2]*D.sunCam[2])
+      : 0.34 + 0.66*Math.max(0, f.n[2]);
     const c = ramp(D.alb[f.i]);
     ctx.beginPath();
     f.p.forEach((q,k)=>{const X=w/2+q[0]*S, Y=cy-q[1]*S; k?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
     ctx.closePath();
     ctx.fillStyle = `rgb(${Math.round(c[0]*lit)},${Math.round(c[1]*lit)},${Math.round(c[2]*lit)})`;
     ctx.fill();
-    ctx.strokeStyle = D.weak[f.i] ? 'rgba(224,164,88,0.55)' : 'rgba(255,255,255,0.10)';
+    ctx.strokeStyle = D.weak[f.i] ? 'rgba(224,164,88,0.55)' : 'rgba(255,255,255,0.16)';
     ctx.lineWidth = D.weak[f.i] ? 1.1 : 0.5;
     ctx.stroke();
   }
