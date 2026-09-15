@@ -162,7 +162,7 @@ def build(tag, assets_written=[False]):
             'shape': f'../data/shapes/{key}.json',
             'lc': f'../data/lightcurves/{key}.json', 'D': keep}
     shell = (f'<!doctype html><meta charset="utf-8">\n'
-             f'<title>{res["target"]} — TESSELLATE asteroid catalogue</title>\n'
+             f'<title>{res["target"]} — TESSELLATE asteroid catalog</title>\n'
              f'<meta name="viewport" content="width=device-width,initial-scale=1">\n'
              f'<link rel="stylesheet" href="../assets/viewer.css">\n'
              + body.replace('<!--title-->', '<!-- ').replace('</title>', ' -->', 1)

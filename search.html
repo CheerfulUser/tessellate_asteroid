@@ -1,0 +1,126 @@
+<!doctype html><meta charset="utf-8">
+<title>Browse the catalog — TESSELLATE asteroid rotation rates</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="assets/viewer.css">
+<style>
+  /* viewer.css pins body to the viewport for the 3D pages; this page must scroll normally,
+     and position:sticky needs a real document scroller to anchor to. */
+  body{overflow:visible;height:auto;position:static}
+  main{max-width:1040px;margin:0 auto;padding:36px 24px 80px}
+  h1{font-size:24px;margin:0 0 6px}
+  a.home{display:inline-block;font-size:12px;color:var(--text-dim);text-decoration:none;
+    margin-bottom:12px;border-bottom:1px solid transparent}
+  a.home:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  .toolbar{position:sticky;top:0;background:var(--bg);padding:12px 0 14px;z-index:5;
+    border-bottom:1px solid var(--panel-border);margin-bottom:10px}
+  #q{width:100%;padding:11px 13px;font-size:14px;border-radius:8px;background:#141a26;
+    border:1px solid var(--panel-border);color:var(--text);font-family:inherit}
+  #q:focus{outline:none;border-color:var(--accent)}
+  .filters{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 2px;font-size:12px;
+    color:var(--text-dim)}
+  .filters label{display:flex;align-items:center;gap:5px;cursor:pointer}
+  .filters select{background:#141a26;border:1px solid var(--panel-border);color:var(--text);
+    border-radius:6px;padding:3px 6px;font-family:inherit;font-size:12px}
+  .filters select:focus{outline:none;border-color:var(--accent)}
+  #hits{font-size:12px;color:var(--text-faint);margin:8px 0 2px}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;
+    font-variant-numeric:tabular-nums;margin-top:6px}
+  th{text-align:right;padding:9px;color:var(--text-faint);font-weight:500;font-size:11.5px;
+    letter-spacing:.04em;cursor:pointer;user-select:none;background:var(--bg);
+    box-shadow:inset 0 -1px 0 var(--panel-border)}
+  th:hover{color:var(--accent)}
+  td{text-align:right;padding:6px 9px;border-bottom:1px solid var(--hairline)}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr:hover{background:#161d2b}
+  td a{color:var(--accent);text-decoration:none}
+  td a:hover{text-decoration:underline}
+  .nopage{color:var(--text-dim)}
+</style>
+<main>
+  <a class="home" href="index.html">&larr; Catalog home</a>
+  <h1>Browse the catalog</h1>
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Search 16,427 objects by name or number&hellip;"
+           autocomplete="off">
+    <div class="filters">
+      <label><input type="checkbox" id="fpage"> Only objects with a shape model</label>
+      <label><input type="checkbox" id="fnew"> Only new to the literature</label>
+      <label><input type="checkbox" id="flong"> Only longer than 24 hours</label>
+      <label>Type
+        <select id="ftype">
+          <option value="">any</option>
+          <option value="*">any classified</option>
+          <option value="S">S-complex (stony)</option>
+          <option value="C">C-complex (carbonaceous)</option>
+          <option value="X">X-complex (metallic / enstatite)</option>
+          <option value="D">D / T (primitive, outer belt)</option>
+          <option value="V">V (basaltic)</option>
+        </select>
+      </label>
+    </div>
+    <div id="hits"></div>
+  </div>
+  <table><thead><tr>
+    <th data-k="d">Object</th><th data-k="p">Period (hours)</th><th data-k="a">Amplitude</th>
+    <th data-k="s">Diameter (km)</th><th data-k="t">Type</th><th data-k="l">LCDB (hours)</th>
+  </tr></thead><tbody id="rows"></tbody></table>
+</main>
+<script>
+const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
+      q=document.getElementById('q');
+let DATA=[], VIEW=[], sortKey='d', sortDir=1, shown=0;
+const CHUNK=300;
+const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
+function row(o){
+  const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
+                :`<span class="nopage">${o.d}</span>`;
+  return `<tr><td>${name}</td><td>${fmt(o.p,4)}</td><td>${fmt(o.a,3)}</td>`+
+         `<td>${fmt(o.s,1)}</td><td>${o.t||'&mdash;'}</td><td>${fmt(o.l,4)}</td></tr>`;
+}
+// windowed rendering: the full list stays in memory, the DOM only grows as you scroll,
+// so 16,000 rows do not have to be laid out at once
+function draw(reset){
+  if(reset){ rows.innerHTML=''; shown=0; }
+  const next=VIEW.slice(shown, shown+CHUNK);
+  rows.insertAdjacentHTML('beforeend', next.map(row).join(''));
+  shown+=next.length;
+  hits.textContent=`${VIEW.length.toLocaleString()} of ${DATA.length.toLocaleString()} objects`
+    + (shown<VIEW.length?` — ${shown.toLocaleString()} loaded, scroll for more`:'');
+}
+function apply(){
+  const s=q.value.trim().toLowerCase();
+  let L=DATA;
+  if(s) L=L.filter(o=>o.d.toLowerCase().includes(s));
+  if(document.getElementById('fpage').checked) L=L.filter(o=>o.g);
+  if(document.getElementById('fnew').checked)  L=L.filter(o=>o.l==null);
+  if(document.getElementById('flong').checked) L=L.filter(o=>o.p>24);
+  const ty=document.getElementById('ftype').value;
+  if(ty==='*') L=L.filter(o=>o.c);            // any classified object
+  else if(ty) L=L.filter(o=>o.c===ty);
+  const k=sortKey;
+  L=L.slice().sort((x,y)=>{
+    let a=x[k], b=y[k];
+    if(a==null&&b==null) return 0;
+    if(a==null) return 1;            // missing values always sort last
+    if(b==null) return -1;
+    if(typeof a==='string') return sortDir*a.localeCompare(b);
+    return sortDir*(a-b);
+  });
+  VIEW=L; draw(true);
+}
+q.addEventListener('input',apply);
+for(const id of ['fpage','fnew','flong','ftype'])
+  document.getElementById(id).addEventListener('change',apply);
+document.querySelectorAll('th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k;
+  sortDir = (k===sortKey) ? -sortDir : 1;
+  sortKey = k; apply();
+}));
+window.addEventListener('scroll',()=>{
+  if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
+    draw(false);
+});
+fetch('data/index.json').then(r=>r.json()).then(j=>{
+  DATA=j; apply();
+}).catch(()=>{hits.textContent='Could not load the catalog index';});
+</script>

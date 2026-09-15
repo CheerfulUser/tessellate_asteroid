@@ -1,86 +1,130 @@
 <!doctype html><meta charset="utf-8">
-<title>TESSELLATE asteroid rotation catalogue</title>
+<title>TESSELLATE asteroid rotation catalog</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="assets/viewer.css">
 <style>
-  body{overflow:auto}
-  main{max-width:780px;margin:0 auto;padding:48px 24px 64px}
-  h1{font-size:28px;margin:0 0 6px}
-  .lede{color:var(--text-dim);font-size:14px;line-height:1.6;margin:0 0 28px}
-  .card{display:block;padding:14px 16px;margin:8px 0;border:1px solid var(--panel-border);
-    border-radius:9px;text-decoration:none;color:var(--text);background:var(--panel)}
-  .card:hover{border-color:var(--accent)}
-  .card .n{font-size:15px;font-weight:600}
-  .card .m{font-size:12px;color:var(--text-dim);font-family:"IBM Plex Mono",monospace;margin-top:3px}
-  h2{font-size:15px;font-weight:600;margin:34px 0 8px;letter-spacing:-0.01em}
-  section p{color:var(--text-dim);font-size:13px;line-height:1.65;margin:0 0 12px}
-  dl{margin:0 0 4px;font-size:13px;line-height:1.6}
-  dt{color:var(--text);font-weight:600;margin-top:10px}
-  dd{color:var(--text-dim);margin:2px 0 0 0}
-  code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;
-    background:#1b2130;padding:1px 5px;border-radius:4px;color:var(--accent)}
-  .note{margin-top:28px;padding:12px 14px;border-radius:7px;background:#e0a4581a;
-    border:1px solid #e0a45840;font-size:12.5px;line-height:1.55;color:#e8c99a}
+  body{overflow:visible;height:auto;position:static}
+  main{max-width:940px;margin:0 auto;padding:44px 24px 72px}
+  h1{font-size:30px;margin:0 0 8px;letter-spacing:-0.02em}
+  .lede{color:var(--text-dim);font-size:14.5px;line-height:1.65;margin:0 0 26px;max-width:70ch}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 30px}
+  /* direct child only: ".kpi div" also matched the .v and .l inside each tile, so every
+     number and label got its own border inside the card */
+  .kpi > div{background:var(--panel);border:1px solid var(--panel-border);border-radius:9px;
+    padding:14px 16px}
+  .kpi .v{font-family:"IBM Plex Mono",monospace;font-size:21px;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11.5px;color:var(--text-dim);margin-top:3px;line-height:1.35}
+  h2{font-size:16px;margin:36px 0 10px}
+  p.note{color:var(--text-dim);font-size:13px;line-height:1.6;margin:0 0 14px;max-width:72ch}
+  .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}
+  .figs figure{margin:0;background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:9px;padding:10px}
+  .figs img{width:100%;height:auto;border-radius:5px;display:block;background:#fff}
+  .figs figcaption{font-size:11.5px;color:var(--text-dim);margin-top:7px;line-height:1.45}
+  #q{width:100%;padding:11px 13px;font-size:14px;border-radius:8px;background:#141a26;
+    border:1px solid var(--panel-border);color:var(--text);font-family:inherit}
+  #q:focus{outline:none;border-color:var(--accent)}
+  .filters{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 4px;font-size:12px;color:var(--text-dim)}
+  .filters label{display:flex;align-items:center;gap:5px;cursor:pointer}
+  #hits{font-size:12px;color:var(--text-faint);margin:8px 0}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;
+    font-variant-numeric:tabular-nums}
+  th{text-align:right;padding:7px 9px;border-bottom:1px solid var(--panel-border);
+    color:var(--text-faint);font-weight:500;font-size:11.5px;letter-spacing:.04em}
+  td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--hairline)}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr:hover{background:#161d2b}
+  td a{color:var(--accent);text-decoration:none}
+  td a:hover{text-decoration:underline}
+  .nopage{color:var(--text-dim)}
+  a.more{color:var(--accent);text-decoration:none;font-weight:600}
+  a.more:hover{text-decoration:underline}
+  .caveat{margin-top:30px;padding:13px 15px;border-radius:8px;background:#e0a4581a;
+    border:1px solid #e0a45840;font-size:12.5px;line-height:1.6;color:#e8c99a;max-width:72ch}
 </style>
 <main>
-  <p class="eyebrow">TESS sectors 27&ndash;55</p>
-  <h1>Asteroid rotation catalogue</h1>
-  <p class="lede">Rotation periods, phase-folded lightcurves and convex shape models derived
-     from the TESSELLATE reduction of TESS full-frame images.</p>
-  <a class="card" href="asteroid/75_Eurydike.html">
-    <div class="n">(75) Eurydike</div>
-    <div class="m">P = 5.35793 h &middot; A = 0.221 mag &middot; 62.4 km &middot; M-type</div></a>
-  <a class="card" href="asteroid/1295_Deflotte.html">
-    <div class="n">(1295) Deflotte</div>
-    <div class="m">P = 26.43840 h &middot; A = 0.373 mag &middot; 47.4 km</div></a>
-  <a class="card" href="asteroid/3550_Link.html">
-    <div class="n">(3550) Link</div>
-    <div class="m">P = 9.83358 h &middot; A = 0.291 mag &middot; 26.5 km</div></a>
-  <a class="card" href="asteroid/3570_Wuyeesun.html">
-    <div class="n">(3570) Wuyeesun</div>
-    <div class="m">P = 15.44777 h &middot; A = 0.602 mag &middot; 20.0 km</div></a>
-  <section>
-    <h2>About the catalogue</h2>
-    <p>TESS observes a 24&deg;&times;96&deg; strip of sky continuously for roughly a month at a
-       time. Asteroids drift through that field, and the TESSELLATE reduction extracts their
-       photometry from the full-frame images. The result is unusually long, uninterrupted
-       coverage: baselines of weeks to months, spanning hundreds of rotations, where
-       ground-based photometry is broken by daylight and weather.</p>
-    <p>That matters most for two things. Slow rotators whose period exceeds a single night are
-       recoverable here. And because the baseline covers so many cycles, the period itself is
-       pinned far more tightly &mdash; for (75) Eurydike, to roughly 25 seconds over 1,751
-       rotations.</p>
+  <p class="eyebrow">TESS sectors 27&ndash;55 &middot; TESSELLATE</p>
+  <h1>Asteroid rotation catalog</h1>
+  <p class="lede">Rotation periods, phase-folded lightcurves and convex shape models for
+     asteroids observed by TESS. Because TESS watches the same field continuously for about a
+     month, these lightcurves run unbroken for weeks &mdash; reaching slow rotators that a single
+     night cannot close, and pinning periods across hundreds of consecutive rotations.</p>
 
-    <h2>Data products</h2>
-    <dl>
-      <dt>Phase-folded lightcurve</dt>
-      <dd>Stacked photometry folded at the adopted period and binned, with the standard error on
-          each bin. Plotted on every object page and downloadable as JSON.</dd>
-      <dt>Full stacked lightcurve</dt>
-      <dd>The complete per-epoch photometry behind the fold, geometry-corrected and normalised
-          per visit. Gzipped CSV, for anyone refitting the period or modelling the object
-          independently.</dd>
-      <dt>Convex shape model</dt>
-      <dd>Derived by convex inversion (DAMIT <code>convexinv</code>) at 289 facets. Rotatable in
-          the browser, synchronised to the lightcurve, and downloadable as a JSON mesh.</dd>
-    </dl>
+  <div class="kpi">
+    <div><div class="v">16,427</div><div class="l">rotation periods</div></div>
+    <div><div class="v">12,068</div><div class="l">with no previously published period</div></div>
+    <div><div class="v">3,287</div><div class="l">longer than 24 hours</div></div>
+    <div><div class="v">46 days</div><div class="l">median observing baseline</div></div>
+    <div><div class="v">1,384</div><div class="l">median measurements each</div></div>
+  </div>
 
-    <h2>How to read a shape model</h2>
-    <p>Most of these asteroids were observed during a single apparition, from one viewing
-       direction. That constrains the <em>shape</em> but not its <em>orientation in space</em>:
-       running the inversion from different starting poles returns solutions scattered by a
-       hundred degrees or more. Every object page reports that scatter as the pole spread, and
-       it should be read before trusting an orientation. The rotation period, by contrast, is
-       well determined.</p>
+  <h2>Search the catalog</h2>
+  <p class="note">Type a name or number for a quick look. Shape-model pages exist for
+     1,929 objects so far and are linked; the rest are listed but not yet published.</p>
+  <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
+  <div id="hits"></div>
+  <table><thead><tr><th>Object</th><th>Period (hours)</th><th>Amplitude</th>
+    <th>Diameter (km)</th><th>Type</th><th>LCDB (hours)</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+  <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
+     catalog &rarr;</a> &mdash; all 16,427 objects, with filters and sorting.</p>
 
-    <h2>Relationship to the LCDB</h2>
-    <p>Where an asteroid already has a published period in the Asteroid Lightcurve Database, both
-       values are shown. Agreement is common; where the two differ it is usually the
-       double-peaked ambiguity, since an elongated body shows two maxima per rotation and a
-       periodogram can lock onto either. A smaller number are cases where the literature period
-       leaves no trace in the TESS photometry at all.</p>
-  </section>
+  <h2>The population</h2>
+  <div class="figs">
+    <figure><img src="assets/period_hist.png" alt="Distribution of rotation periods">
+      <figcaption>Rotation periods. 3,287 objects turn more slowly than once a day,
+      the regime ground-based photometry struggles to close.</figcaption></figure>
+    <figure><img src="assets/spin_size.png" alt="Spin rate against diameter">
+      <figcaption>Spin rate against size. The 2.2 hour barrier is where a loosely bound rubble pile
+      would fly apart; almost nothing sits above it.</figcaption></figure>
+    <figure><img src="assets/amplitude_period.png" alt="Lightcurve amplitude against period">
+      <figcaption>Amplitude against period. Larger amplitude means a more elongated body, since
+      a rounder one varies less as it turns.</figcaption></figure>
+    <figure style="grid-column:1/-1"><img src="assets/orbital_elements.png"
+        alt="Semi-major axis against inclination and eccentricity">
+      <figcaption>Where these asteroids orbit. The dashed lines are Jupiter mean-motion
+      resonances, which clear the Kirkwood gaps; clumps are collisional families. The catalog
+      samples the inner, middle and outer belt about equally.</figcaption></figure>
+  </div>
 
-  <div class="note">Preview build. The full catalogue and the population figures and search are
-     still being generated; four objects are published here as examples of the page format.</div>
+  <h2>What you can download</h2>
+  <p class="note">Each object page carries its phase-folded lightcurve with per-bin
+     uncertainties, the full stacked photometry behind it, and a rotatable convex shape model
+     &mdash; all downloadable, and the shape model is synchronised to the lightcurve so you can
+     watch which face produces which feature.</p>
+
+  <div class="caveat">
+    <strong>Reading a shape model.</strong> Most of these asteroids were seen during a single
+    apparition, from one direction. That constrains the shape but not its orientation in space,
+    so the spin axis is assumed rather than measured and every page says so. Convex inversion
+    also cannot represent concavities, so models systematically under-reach the deepest minima.
+    The rotation periods, by contrast, are well determined.
+  </div>
 </main>
+<script>
+const IDX_URL='data/index.json';
+const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
+      q=document.getElementById('q');
+let DATA=[];
+const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
+const PREVIEW=10;
+function render(list){
+  hits.textContent=`${list.length.toLocaleString()} of ${DATA.length.toLocaleString()} objects`
+    + (list.length>PREVIEW?` — showing ${PREVIEW}`:'');
+  rows.innerHTML=list.slice(0,PREVIEW).map(o=>{
+    const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
+                  :`<span class="nopage">${o.d}</span>`;
+    return `<tr><td>${name}</td><td>${fmt(o.p,4)}</td><td>${fmt(o.a,3)}</td>`+
+           `<td>${fmt(o.s,1)}</td><td>${o.t||'&mdash;'}</td><td>${fmt(o.l,4)}</td></tr>`;
+  }).join('');
+}
+function apply(){
+  const s=q.value.trim().toLowerCase();
+  render(s?DATA.filter(o=>o.d.toLowerCase().includes(s)):DATA);
+}
+q.addEventListener('input',apply);
+fetch(IDX_URL).then(r=>r.json()).then(j=>{
+  DATA=j.sort((a,b)=>(b.g-a.g)||a.d.localeCompare(b.d));
+  apply();
+}).catch(()=>{hits.textContent='could not load the catalog index';});
+</script>

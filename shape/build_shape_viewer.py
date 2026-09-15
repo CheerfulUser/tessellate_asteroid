@@ -24,7 +24,7 @@ from real_shape_tess import TARGETS, prepare  # noqa: E402
 # Per-facet albedo mapping is DISABLED. The inversion improved the fit by only 0.6% over a
 # uniform surface, with 95 of 289 zones effectively unobserved -- a permissible albedo map, not
 # a detected one, and shape/albedo are degenerate in disc-integrated photometry anyway. The
-# published UNIFORM geometric albedo is kept: that is a real catalogue measurement and is what
+# published UNIFORM geometric albedo is kept: that is a real catalog measurement and is what
 # sets the true-colour brightness.
 USE_ALBEDO_MAP = False
 
@@ -167,7 +167,7 @@ def _mat2quat(R):
 
 CAMQ = _mat2quat(_Rcam)
 
-# ---- physical properties, looked up from the production catalogue rather than hardcoded,
+# ---- physical properties, looked up from the production catalog rather than hardcoded,
 # so adding a target needs no edit here.
 # IMPORTANT for the true-colour mode: TESS observes in ONE broad red bandpass, so these data
 # carry NO colour information. The hue comes entirely from the published taxonomic class and
@@ -283,10 +283,10 @@ html = f'''<title>{res['target']} Shape Model</title>
   @media (max-width:820px){{ .info{{max-width:260px;padding:12px 14px}} }}
 </style>
 
-<canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid {res['target']}, coloured by relative albedo"></canvas>
+<canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid {res['target']}, colored by relative albedo"></canvas>
 
 <div class="panel info">
-  <a class="home" href="../index.html">&larr; Catalogue</a>
+  <a class="home" href="../index.html">&larr; Catalog</a>
   <p class="eyebrow">TESS convex inversion</p>
   <h1>{res['target']}</h1>
   <p class="sec" style="margin-top:0">Physical properties</p>
@@ -308,7 +308,7 @@ html = f'''<title>{res['target']} Shape Model</title>
     The spin axis is ASSUMED, not fitted: single-apparition data cannot determine a pole, and
     every orientation fits this lightcurve about equally well. The shape is barely affected by
     that choice, but its orientation in space carries no information.
-    Albedo colouring assumes all residual is albedo rather than unmodelled shape; the two are
+    Albedo coloring assumes all residual is albedo rather than unmodeled shape; the two are
     degenerate in disc-integrated photometry.
   </div>
 </div>
@@ -324,9 +324,9 @@ html = f'''<title>{res['target']} Shape Model</title>
     <label for="ph">Phase</label><input type="range" id="ph" min="0" max="1000" value="0">
     <span class="stat-value" id="phv">0.000</span>
   </div>
-  <p class="hint" id="hint">Snapped to the TESS viewing geometry. Drag horizontally to turn the
-     body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a
-     steady rate.</p>
+  <p class="hint" id="hint">Viewed equator-on, with the assumed spin axis vertical. Drag
+     horizontally to turn the body about that axis &mdash; the lightcurve marker follows. Press
+     Play to rotate at a steady rate.</p>
   <canvas id="lc" aria-label="Phase-folded lightcurve, one period, with a marker tracking the displayed rotation"></canvas>
 </div>
 
@@ -546,7 +546,7 @@ function setMode(m){{
   if(!lock && spinning){{ spinning=false; spinBtn.setAttribute('aria-pressed','false');
     spinBtn.innerHTML='&#9654; Play'; }}
   hint.innerHTML = lock
-    ? 'Snapped to the TESS viewing geometry. Drag horizontally to turn the body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a steady rate.'
+    ? 'Viewed equator-on. Drag horizontally to turn the body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a steady rate.'
     : 'Drag to rotate the view freely. Switch to <em>Locked to axis</em> to drag the body around its spin axis, synced to the lightcurve.';
   cv.style.cursor = lock ? 'ew-resize' : 'grab';
   if(lock) orient = D.camQ.slice();   // snap to the TESS viewing geometry

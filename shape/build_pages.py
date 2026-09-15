@@ -1,0 +1,196 @@
+"""Generate asteroid pages from the batch shape output.
+
+batch_shapes.py writes one JSON per object holding {solution, mesh, lightcurve}, which is a
+different layout from the single-object path (separate *_results.json / *_mesh_data.json fed
+through build_shape_viewer.py). This consumes the batch format directly and emits the same
+shell + data files, so pages from either path are identical to a visitor.
+
+CAMERA. The single-object path derived the viewing geometry from each object's per-epoch
+positions. That is unnecessary now: the pole is FIXED perpendicular to the mean observer
+direction, so every object is equator-on by construction and the camera is the same in body
+coordinates -- looking along +x with the spin axis (z) up. The Sun is placed near the observer
+because the phase angles here are small (a few degrees to ~20), so the terminator sits close to
+the limb either way.
+
+Usage:
+    python shape/build_pages.py shapes_in/            # all JSONs in a directory
+    python shape/build_pages.py shapes_in/ --limit 500
+"""
+import argparse, glob, json, os, sys
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+Y34 = os.environ.get('Y34_DIR', '/Users/rridden/Documents/work/code/tess/asteroid/y3_4')
+BULK_BASE = os.environ.get('BULK_BASE', '../data/lightcurves')
+COORD_DP = 4
+
+# Equator-on camera, identical for every object: look along +x, spin axis up.
+# R_cam rows are the camera basis (x_c, y_c, z_c); z_c is the view direction.
+_ZC = np.array([1.0, 0.0, 0.0])                 # observer sits on the body's equator
+_YC = np.array([0.0, 0.0, 1.0])                 # spin axis points up on screen
+_XC = np.cross(_YC, _ZC)
+_RCAM = np.vstack([_XC, _YC, _ZC])
+
+
+def _mat2quat(R):
+    t = np.trace(R)
+    if t > 0:
+        S = np.sqrt(t + 1.0) * 2
+        q = [0.25 * S, (R[2, 1] - R[1, 2]) / S, (R[0, 2] - R[2, 0]) / S, (R[1, 0] - R[0, 1]) / S]
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
+        q = [(R[2, 1] - R[1, 2]) / S, 0.25 * S, (R[0, 1] + R[1, 0]) / S, (R[0, 2] + R[2, 0]) / S]
+    elif R[1, 1] > R[2, 2]:
+        S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
+        q = [(R[0, 2] - R[2, 0]) / S, (R[0, 1] + R[1, 0]) / S, 0.25 * S, (R[1, 2] + R[2, 1]) / S]
+    else:
+        S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
+        q = [(R[1, 0] - R[0, 1]) / S, (R[0, 2] + R[2, 0]) / S, (R[1, 2] + R[2, 1]) / S, 0.25 * S]
+    q = np.array(q)
+    return (q / np.linalg.norm(q)).tolist()
+
+
+CAMQ = _mat2quat(_RCAM)
+# Sun offset ~15 deg from the observer, within the real phase-angle range, so the body is lit
+# from slightly off-axis rather than flat-on.
+_a = np.radians(15.0)
+SUNCAM = (_RCAM @ (np.cos(_a) * _ZC + np.sin(_a) * _XC)).tolist()
+
+_TINT = {'M': [1.00, 0.93, 0.82], 'S': [1.00, 0.90, 0.76], 'C': [1.00, 0.98, 0.96]}
+
+
+def stat(label, value):
+    return (f'<div class="stat-row"><span class="stat-label">{label}</span>'
+            f'<span class="stat-value">{value}</span></div>')
+
+
+def build(path, phys):
+    d = json.load(open(path))
+    s, mesh, lc = d['solution'], d['mesh'], d['lightcurve']
+    key = s['key']
+    p = phys.get(s['designation'], {})
+
+    os.makedirs(f'{ROOT}/data/shapes', exist_ok=True)
+    os.makedirs(f'{ROOT}/data/lightcurves', exist_ok=True)
+    os.makedirs(f'{ROOT}/asteroid', exist_ok=True)
+    json.dump(mesh, open(f'{ROOT}/data/shapes/{key}.json', 'w'), separators=(',', ':'))
+    json.dump(lc, open(f'{ROOT}/data/lightcurves/{key}.json', 'w'), separators=(',', ':'))
+
+    geo = p.get('albedo')
+    spec = p.get('spec')
+    rows = ''.join([
+        stat('Taxonomic type', spec if spec else '&mdash;'),
+        stat('Diameter', f"{p['diam']:.1f} km" if p.get('diam') else '&mdash;'),
+        stat('Geometric albedo', f'{geo:.3f}' if geo else '&mdash;'),
+        stat('Absolute mag <em>H</em>', f"{p['H']:.2f}" if p.get('H') else '&mdash;'),
+        stat('LCDB period', f"{p['lcdb']:.4f} hours" if p.get('lcdb') else 'none (new)'),
+    ])
+    sol = ''.join([
+        stat('Rotation period', f"{s['adopted_period_hr']:.5f} hours"),
+        stat('Amplitude', f"{s['amplitude_mag']:.3f} mag" if s.get('amplitude_mag') else '&mdash;'),
+        stat('Equatorial ratio', f"{s['equatorial_ratio']:.2f}" if s.get('equatorial_ratio') else '&mdash;'),
+        stat('Polar / equatorial', f"{s['polar_ratio']:.2f}" if s.get('polar_ratio') else '&mdash;'),
+        stat('Observations', f"{s['n_obs']:,} pts / {s['n_visits']} visits"),
+        stat('Baseline', f"{s['baseline_days']:.1f} d"),
+        stat('Facets', s.get('n_facets', '&mdash;')),
+        stat('Spin axis', 'assumed equator-on'),
+    ])
+    dl = ['<p class="sec">Downloads</p><div class="dl">',
+          f'<a href="../data/shapes/{key}.json" download>Shape model (JSON mesh)</a>',
+          f'<a href="../data/lightcurves/{key}.json" download>Folded lightcurve (JSON)</a>']
+    if os.path.exists(f'{ROOT}/data/lightcurves/{key}_stacked.csv.gz'):
+        dl.append(f'<a href="{BULK_BASE}/{key}_stacked.csv.gz" download>'
+                  f'Full stacked lightcurve (CSV.gz)</a>')
+    dl.append('</div>')
+
+    meta = {'key': key, 'has_lc': bool(lc.get('phase')),
+            'shape': f'../data/shapes/{key}.json',
+            'lc': f'../data/lightcurves/{key}.json',
+            'D': {'alb': [1.0] * len(mesh['fn']), 'weak': [False] * len(mesh['fn']),
+                  # neutral mid-grey: with the albedo map off every facet takes this one
+                  # colour, so it must be a readable surface tone. [0,32,76] is cividis's
+                  # DARKEST entry and rendered the body near-black.
+                  'lo': 1.0, 'hi': 1.0, 'lut': [[140, 138, 132]],
+                  'camQ': CAMQ, 'sunCam': SUNCAM, 'aspect': 90.0,
+                  'geoAlbedo': geo if geo else 0.10,
+                  'tint': _TINT.get(spec[:1].upper() if spec else '', [1.0, 1.0, 1.0]),
+                  'spec': spec if spec else 'unknown'}}
+
+    html = f'''<!doctype html><meta charset="utf-8">
+<title>{s['designation']} — TESSELLATE asteroid catalog</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../assets/viewer.css">
+<canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid {s['designation']}"></canvas>
+<div class="panel info">
+  <a class="home" href="../index.html">&larr; Catalog</a>
+  <p class="eyebrow">TESSELLATE convex inversion</p>
+  <h1>{s['designation']}</h1>
+  <p class="sec" style="margin-top:0">Physical properties</p>
+  {rows}
+  <p class="sec">TESSELLATE solution</p>
+  {sol}
+  {''.join(dl)}
+  <div class="caveat">
+    The spin axis is ASSUMED, not fitted: single-apparition data cannot determine a pole, and
+    every orientation fits this lightcurve about equally well. The shape is barely affected by
+    that choice, but its orientation in space carries no information. Convex inversion also
+    cannot represent concavities, so the model under-reaches the deepest minima.
+  </div>
+</div>
+<div class="panel ctrl">
+  <div class="row" role="group" aria-label="Rotation mode">
+    <button class="btn" id="mLock" aria-pressed="true">Locked to axis</button>
+    <button class="btn" id="mFree" aria-pressed="false">Free rotate</button>
+    <button class="btn" id="reset">Reset</button>
+  </div>
+  <div class="row" id="playrow">
+    <button class="btn" id="spin" aria-pressed="false">&#9654; Play</button>
+    <label for="ph">Phase</label><input type="range" id="ph" min="0" max="1000" value="0">
+    <span class="stat-value" id="phv">0.000</span>
+  </div>
+  <p class="hint" id="hint">Viewed equator-on, with the assumed spin axis vertical. Drag
+     horizontally to turn the body about that axis &mdash; the lightcurve marker follows. Press
+     Play to rotate at a steady rate.</p>
+  <canvas id="lc" aria-label="Phase-folded lightcurve with a marker tracking the rotation"></canvas>
+</div>
+<script>window.AST={json.dumps(meta, separators=(',', ':'))};</script>
+<script src="../assets/viewer.js"></script>
+'''
+    open(f'{ROOT}/asteroid/{key}.html', 'w').write(html)
+    return key
+
+
+def load_phys():
+    import pandas as pd
+    c = pd.read_csv(f'{Y34}/population_figs/all_sector_report_v5_doubled.csv', low_memory=False)
+    out = {}
+    for t in c.itertuples():
+        out[t.designation] = dict(
+            diam=None if pd.isna(t.diameter_km_real) else float(t.diameter_km_real),
+            albedo=None if pd.isna(t.albedo_real) else float(t.albedo_real),
+            spec=None if pd.isna(t.spec_type) else str(t.spec_type),
+            H=None if pd.isna(t.magnitude_H) else float(t.magnitude_H),
+            lcdb=None if pd.isna(t.published_rot_per_hr) else float(t.published_rot_per_hr))
+    return out
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('indir')
+    ap.add_argument('--limit', type=int)
+    a = ap.parse_args()
+    files = sorted(glob.glob(f'{a.indir}/*.json'))
+    files = [f for f in files if not os.path.basename(f).startswith('_')]
+    if a.limit:
+        files = files[:a.limit]
+    phys = load_phys()
+    print(f'{len(files):,} shape files')
+    n = 0
+    for f in files:
+        try:
+            build(f, phys)
+            n += 1
+        except Exception as e:
+            print(f'  {os.path.basename(f)}: {type(e).__name__}: {e}')
+    print(f'built {n:,} pages in {ROOT}/asteroid/')

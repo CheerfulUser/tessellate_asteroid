@@ -233,7 +233,7 @@ function setMode(m){
   if(!lock && spinning){ spinning=false; spinBtn.setAttribute('aria-pressed','false');
     spinBtn.innerHTML='&#9654; Play'; }
   hint.innerHTML = lock
-    ? 'Snapped to the TESS viewing geometry. Drag horizontally to turn the body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a steady rate.'
+    ? 'Viewed equator-on, with the assumed spin axis vertical. Drag horizontally to turn the body about that axis &mdash; the lightcurve marker follows. Press Play to rotate at a steady rate.'
     : 'Drag to rotate the view freely. Switch to <em>Locked to axis</em> to drag the body around its spin axis, synced to the lightcurve.';
   cv.style.cursor = lock ? 'ew-resize' : 'grab';
   if(lock) orient = D.camQ.slice();   // snap to the TESS viewing geometry

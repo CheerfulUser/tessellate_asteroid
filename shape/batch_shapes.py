@@ -101,7 +101,17 @@ def sn(d):
 
 
 def prepare(df):
-    """Deduplicate cut overlap, drop under-populated visits, sort."""
+    """Deduplicate cut overlap, drop under-populated visits, sort.
+
+    clean_lightcurves/ stores raw `flux`, not `rel_flux` -- the per-visit median normalisation
+    is step 4 of the production path and is what puts separate visits and sectors onto one
+    brightness scale. Without it the inversion sees each visit's zeropoint as real variation.
+    """
+    if 'rel_flux' not in df.columns:
+        m = df.groupby('visit')['flux'].transform('median')
+        ok = m.notna() & (m > 0)
+        df = df[ok].copy()
+        df['rel_flux'] = df['flux'] / m[ok]
     df = df.dropna(subset=['mjd', 'rel_flux', 'ra', 'dec', 'delta_au']).copy()
     df['_k'] = df['mjd'].round(6)
     df['_vn'] = df.groupby('visit')['mjd'].transform('size')
@@ -344,6 +354,8 @@ if __name__ == '__main__':
     ap.add_argument('--targets'); ap.add_argument('--designation')
     ap.add_argument('--index', type=int, default=0); ap.add_argument('--total', type=int, default=1)
     ap.add_argument('--lcdir', default='lcdb_lcs/stacked')
+    # clean_lightcurves/ uses *_clean_lc.csv; lcdb_lcs/stacked/ uses *_lc.csv
+    ap.add_argument('--lcsuffix', default='_lc.csv')
     ap.add_argument('--out', default='shapes'); ap.add_argument('--work', default='_work')
     a = ap.parse_args()
     os.makedirs(a.work, exist_ok=True); os.makedirs(a.out, exist_ok=True)
@@ -356,7 +368,7 @@ if __name__ == '__main__':
     recs = []
     for _, r in t.iterrows():
         rec = process(r['designation'], r['period_hr'],
-                      f"{a.lcdir}/{sn(r['designation'])}_lc.csv", a.work, a.out)
+                      f"{a.lcdir}/{sn(r['designation'])}{a.lcsuffix}", a.work, a.out)
         recs.append(rec)
         print(f"  {rec['key']:26s} {'ok' if rec['ok'] else 'FAIL'} {rec['seconds']:6.1f}s "
               f"{rec.get('error','')}", flush=True)
