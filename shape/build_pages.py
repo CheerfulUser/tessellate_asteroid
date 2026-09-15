@@ -60,17 +60,19 @@ SUNCAM = (_RCAM @ (np.cos(_a) * _ZC + np.sin(_a) * _XC)).tolist()
 _TINT = {'M': [1.00, 0.93, 0.82], 'S': [1.00, 0.90, 0.76], 'C': [1.00, 0.98, 0.96]}
 
 
-# Lightcurve symmetry: the even-harmonic power fraction, 1/(1+odd/even), bounded 0-1 where 1.00
-# means the two maxima per rotation are identical. Cuts match the catalog tables: an object is
-# monomodal below 0.431 (odd/even 1.32, the measured split against the pipeline's own
-# double_peaked flag) and symmetric at or above 0.800 (odd/even 0.25).
+# Lightcurve symmetry on a signed scale: (even-odd)/(even+odd) = (1-oe)/(1+oe), bounded -1..+1.
+# +1 is two identical maxima per rotation, -1 is a single maximum, and ZERO is the physical
+# crossover where odd-harmonic power equals even -- so the sign alone says the curve has gone
+# single-peaked. Cuts match the catalog tables: monomodal below -0.138 (odd/even 1.32, the
+# measured split against the pipeline's own double_peaked flag), symmetric at or above +0.600
+# (odd/even 0.25).
 def symmetry_cell(p):
     oe = p.get('odd_over_even')
     if oe is None:
         return '&mdash;'
-    m = 1.0 / (1.0 + oe)
-    lab = 'monomodal' if m < 0.431 else ('symmetric' if m >= 0.800 else 'asymmetric')
-    return f'{m:.2f} <span class="sym-note">({lab})</span>'
+    m = (1.0 - oe) / (1.0 + oe)
+    lab = 'monomodal' if m < -0.138 else ('symmetric' if m >= 0.600 else 'asymmetric')
+    return f'{m:+.2f} <span class="sym-note">({lab})</span>'
 
 
 def stat(label, value):
@@ -148,8 +150,7 @@ def build(path, phys):
   <div class="caveat">
     The spin axis is ASSUMED, not fitted: single-apparition data cannot determine a pole, and
     every orientation fits this lightcurve about equally well. The shape is barely affected by
-    that choice, but its orientation in space carries no information. Convex inversion also
-    cannot represent concavities, so the model under-reaches the deepest minima.
+    that choice, but its orientation in space carries no information.
   </div>
 </div>
 <div class="panel ctrl">

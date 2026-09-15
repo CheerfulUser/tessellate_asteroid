@@ -81,7 +81,7 @@
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
-    <th data-k="m" tabindex="0" role="button" title="Even-harmonic power fraction: 1.00 means the two maxima per rotation are identical">Symmetry</th>
+    <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
 </main>
@@ -94,8 +94,8 @@ const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const SYMLBL={symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'};
 function sym(o){
   if(o.m==null) return '&mdash;';
-  const t=` title="${SYMLBL[o.y]||''} — even-harmonic power fraction ${o.m} (odd/even ratio ${o.o})"`;
-  return `<span class="tag ${o.y}"${t}>${o.m.toFixed(2)}</span>`;
+  const t=` title="${SYMLBL[o.y]||''} — signed symmetry ${o.m} (odd/even ratio ${o.o})"`;
+  return `<span class="tag ${o.y}"${t}>${o.m>0?'+':''}${o.m.toFixed(2)}</span>`;
 }
 function row(o){
   const name=o.g?`<a href="asteroid/${o.k}.html">${o.d}</a>`
@@ -157,7 +157,7 @@ window.addEventListener('scroll',()=>{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
 });
-fetch('data/index.json?v=e26babf7').then(r=>r.json()).then(j=>{
+fetch('data/index.json?v=d4f39527').then(r=>r.json()).then(j=>{
   DATA=j; apply();
 }).catch(()=>{hits.textContent='Could not load the catalog index';});
 </script>

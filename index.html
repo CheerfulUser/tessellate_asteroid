@@ -76,7 +76,7 @@
 
   <h2>Search the catalog</h2>
   <p class="note">Type a name or number for a quick look. Shape-model pages exist for
-     14,761 objects so far and are linked; the rest are listed but not yet published.</p>
+     14,764 objects so far and are linked; the rest are listed but not yet published.</p>
   <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
   <div id="hits"></div>
   <table><thead><tr>
@@ -85,7 +85,7 @@
     <th data-k="a" tabindex="0" role="button">Amplitude</th>
     <th data-k="s" tabindex="0" role="button">Diameter (km)</th>
     <th data-k="t" tabindex="0" role="button">Type</th>
-    <th data-k="m" tabindex="0" role="button" title="Even-harmonic power fraction: 1.00 means the two maxima per rotation are identical">Symmetry</th>
+    <th data-k="m" tabindex="0" role="button" title="+1 symmetric (two identical maxima), 0 equal odd and even power, -1 monomodal (one maximum per rotation)">Symmetry</th>
     <th data-k="l" tabindex="0" role="button">LCDB (hours)</th>
   </tr></thead><tbody id="rows"></tbody></table>
   <p class="note" style="margin-top:12px"><a class="more" href="search.html">Browse the full
@@ -124,7 +124,7 @@
   </div>
 </main>
 <script>
-const IDX_URL='data/index.json?v=e26babf7';
+const IDX_URL='data/index.json?v=d4f39527';
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
       q=document.getElementById('q');
 let DATA=[], sortKey=null, sortDir=1;
@@ -132,8 +132,8 @@ const fmt=(v,d)=>v==null?'&mdash;':(+v).toFixed(d);
 const SYMLBL={symmetric:'Symmetric',asymmetric:'Asymmetric',monomodal:'Monomodal'};
 function sym(o){
   if(o.m==null) return '&mdash;';
-  const t=` title="${SYMLBL[o.y]||''} — even-harmonic power fraction ${o.m} (odd/even ratio ${o.o})"`;
-  return `<span class="tag ${o.y}"${t}>${o.m.toFixed(2)}</span>`;
+  const t=` title="${SYMLBL[o.y]||''} — signed symmetry ${o.m} (odd/even ratio ${o.o})"`;
+  return `<span class="tag ${o.y}"${t}>${o.m>0?'+':''}${o.m.toFixed(2)}</span>`;
 }
 const PREVIEW=10;
 const LABEL={d:'name',p:'period',a:'amplitude',s:'diameter',t:'type',m:'symmetry',l:'LCDB period'};
