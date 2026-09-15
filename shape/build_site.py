@@ -29,6 +29,18 @@ SRC = os.environ.get('SHAPE_SRC',
                      '/Users/rridden/Documents/work/code/tess/tessellate_test/asteroid_dev/shape_modeling')
 WEB, DATA = ROOT, f'{ROOT}/data'
 COORD_DP = 4
+
+# Where the FULL stacked lightcurves are served from. Small per-object JSON (mesh, folded curve)
+# must stay on a CORS-enabled host because the page fetches it with JavaScript -- GitHub Pages
+# and raw.githubusercontent send `access-control-allow-origin: *`, Google Drive does not, so
+# Drive is not an option for those. The full CSVs are only ever CLICKED, so they can live
+# anywhere, and at ~1.8 GB across the catalogue they must eventually leave the published tree:
+# the Pages site is hard-capped at 1 GB.
+#
+# Zenodo is the intended long-term home -- permanent, versioned, citable via DOI, 50 GB per
+# record. Point BULK_BASE at the record and nothing else changes.
+#   BULK_BASE = 'https://zenodo.org/records/<id>/files'
+BULK_BASE = os.environ.get('BULK_BASE', '../data/lightcurves')
 Y34 = os.environ.get('Y34_DIR', '/Users/rridden/Documents/work/code/tess/asteroid/y3_4')
 
 
@@ -141,7 +153,7 @@ def build(tag, assets_written=[False]):
           f'<a href="../data/shapes/{key}.json" download>shape model (JSON mesh)</a>',
           f'<a href="../data/lightcurves/{key}.json" download>folded lightcurve (JSON)</a>']
     if has_full:
-        dl.append(f'<a href="../data/lightcurves/{key}_stacked.csv.gz" download>'
+        dl.append(f'<a href="{BULK_BASE}/{key}_stacked.csv.gz" download>'
                   f'full stacked lightcurve (CSV.gz, {os.path.getsize(full_gz)//1024} KB)</a>')
     dl.append('</div>')
     body = body.replace('<div class="caveat">', ''.join(dl) + '<div class="caveat">', 1)

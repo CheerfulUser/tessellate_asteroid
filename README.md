@@ -38,3 +38,21 @@ spread on every solution and should be read before trusting an orientation.
 carrying TESS precision where warranted; the published `Period` is never overwritten and
 `period_source` gives the provenance of each row. `vetted_lcdb_errors.csv` lists 172 literature
 periods confirmed wrong by inspection.
+
+## Hosting
+
+The site is published by GitHub Pages from the repository root:
+<https://cheerfuluser.github.io/tessellate_asteroid/>
+
+Per-object mesh and folded-lightcurve JSON are fetched by the page at runtime, so they must be
+served from a CORS-enabled host. GitHub Pages and `raw.githubusercontent.com` both send
+`access-control-allow-origin: *`; **Google Drive does not**, so Drive cannot host those files.
+
+Full stacked lightcurves are only ever clicked, not fetched, so they can live anywhere. At
+roughly 1.8 GB across the catalogue they will have to leave the published tree, because a Pages
+site is hard-capped at 1 GB. **Zenodo is the intended long-term home** -- permanent, versioned
+and citable by DOI. Set `BULK_BASE` when building to repoint every download link:
+
+```
+BULK_BASE=https://zenodo.org/records/<id>/files python shape/build_site.py <targets>
+```
