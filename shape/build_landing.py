@@ -514,8 +514,52 @@ window.addEventListener('scroll',()=>{{
   if(shown<VIEW.length && window.innerHeight+window.scrollY > document.body.offsetHeight-600)
     draw(false);
 }});
+// Remember the browse state, so coming back from an asteroid page returns you to the list you
+// had, not a blank one. sessionStorage: per-tab, cleared when the tab closes, never sent anywhere.
+const SKEY='tessellate.browse';
+function saveState(){{
+  try{{ sessionStorage.setItem(SKEY, JSON.stringify({{
+    q:q.value, sortKey, sortDir, y:window.scrollY,
+    fpage:document.getElementById('fpage').checked,
+    fnew:document.getElementById('fnew').checked,
+    flong:document.getElementById('flong').checked,
+    ftype:document.getElementById('ftype').value }})); }}catch(e){{}}
+}}
+function restoreState(){{
+  try{{
+    const v=JSON.parse(sessionStorage.getItem(SKEY)||'null'); if(!v) return null;
+    q.value=v.q||'';
+    document.getElementById('fpage').checked=!!v.fpage;
+    document.getElementById('fnew').checked=!!v.fnew;
+    document.getElementById('flong').checked=!!v.flong;
+    document.getElementById('ftype').value=v.ftype||'';
+    if(v.sortKey){{
+      sortKey=v.sortKey; sortDir=v.sortDir||1;
+      document.querySelectorAll('th[data-k]').forEach(h=>h.removeAttribute('aria-sort'));
+      const th=document.querySelector(`th[data-k="${{sortKey}}"]`);
+      if(th) th.setAttribute('aria-sort', sortDir>0?'ascending':'descending');
+    }}
+    return v;
+  }}catch(e){{ return null; }}
+}}
+window.addEventListener('pagehide', saveState);
+document.addEventListener('click', e=>{{ if(e.target.closest('#rows a')) saveState(); }});
+
 fetch('data/index.json?v={IDXV}').then(r=>r.json()).then(j=>{{
-  DATA=j; apply();
+  DATA=j;
+  const v=restoreState();
+  apply();
+  if(v && v.y){{
+    // the list renders in chunks, so keep loading until the saved offset is reachable
+    let guard=0;
+    (function seek(){{
+      if(window.scrollY<v.y && shown<VIEW.length && guard++<200){{ draw(false); }}
+      if(document.body.offsetHeight>=v.y+window.innerHeight || shown>=VIEW.length){{
+        window.scrollTo(0,v.y); return;
+      }}
+      if(guard<200) requestAnimationFrame(seek); else window.scrollTo(0,v.y);
+    }})();
+  }}
 }}).catch(()=>{{hits.textContent='Could not load the catalog index';}});
 </script>
 '''

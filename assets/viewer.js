@@ -1,3 +1,24 @@
+// Send the back link where the visitor actually came from. Asteroid pages hardcode
+// "<- Catalog" pointing at index.html, but most visitors arrive from search.html, and dropping
+// them on the home page loses the query, filters and sort they had set up. Kept inline in both
+// shared scripts rather than a third file, so no page needs an extra tag or request.
+(function(){
+  function fixBackLink(){
+    try{
+      var a=document.querySelector('a.home');
+      if(!a||a.dataset.backFixed) return;
+      var ref=document.referrer; if(!ref) return;
+      var u=new URL(ref, window.location.href);
+      if(u.origin!==window.location.origin) return;          // same-origin navigation only
+      if(!/\/search\.html$/.test(u.pathname)) return;
+      a.href='../search.html'; a.innerHTML='&larr; Back to browse';
+      a.dataset.backFixed='1';
+    }catch(e){ /* a broken referrer must never take the page down */ }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',fixBackLink);
+  else fixBackLink();
+})();
+
 // Shared by every per-asteroid page. The mesh and folded lightcurve are FETCHED
 // rather than embedded: 73 KB per page x 16,000 objects exceeds the 1 GB GitHub
 // Pages limit. Everything below the fetch is unchanged from the single-page viewer.
