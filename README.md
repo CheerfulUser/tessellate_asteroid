@@ -14,8 +14,9 @@ offline. `web/asteroid/75_Eurydike.html` is the reference example.
 
 | path | contents |
 |---|---|
-| `web/` | the published site (GitHub Pages) |
-| `web/asteroid/` | one self-contained page per asteroid |
+| `index.html` | splash page (GitHub Pages serves from the repo root) |
+| `asteroid/` | one page per asteroid |
+| `assets/` | shared viewer CSS/JS, cached across pages |
 | `shape/` | convex inversion and the page generator (`build_shape_viewer.py`) |
 | `data/lightcurves/` | one phase-folded, binned lightcurve per asteroid (JSON, ~2 KB each) |
 | `data/shapes/` | convex shape models (JSON mesh + solution metadata) |
