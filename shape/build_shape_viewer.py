@@ -95,11 +95,21 @@ lc_model = None
 try:
     _mod = np.loadtxt(os.path.join(HERE, f'{TAG}_fit_{bi}.txt'))
     if len(_mod) == len(df):
+        # Rescale EACH SESSION to its own data before binning. convexinv fits relative
+        # photometry with a free brightness scale per session, so its model values are not on a
+        # common scale -- for (3550) Link the model/data ratio runs 0.886 to 1.233 across seven
+        # sessions. A single global renormalisation leaves that 39% spread in place, and since
+        # each session covers its own span of rotational phase, the mismatch appears as regular
+        # spikes in the folded model and inflates its amplitude (0.505 mag against the data's
+        # 0.291). The data is already per-visit normalised; the model has to be too.
+        _mod = _mod.astype(float).copy()
+        for _v in pd.unique(df['visit'].values):
+            _m = (df['visit'].values == _v)
+            _dm, _mm = df['rel_flux'].values[_m].mean(), _mod[_m].mean()
+            if np.isfinite(_mm) and _mm != 0:
+                _mod[_m] *= _dm / _mm
         _ms = np.bincount(b, weights=_mod, minlength=NB) / np.maximum(cnt, 1)
         _mv = _ms[ok]
-        _d = np.array(lc_flux)
-        if np.isfinite(_mv).all() and _mv.mean() != 0:
-            _mv = _mv * (_d.mean() / _mv.mean())    # free per-session scale in relative photometry
         lc_model = [round(float(x), 6) for x in _mv]
     else:
         print(f'  fit file has {len(_mod)} rows vs {len(df)} obs -- model overlay skipped')
