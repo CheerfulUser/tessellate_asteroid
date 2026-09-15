@@ -38,6 +38,10 @@ TARGETS = {
     # cannot detect in our data at all (theta 1.004 against a random-period null of 1.002).
     'link': dict(name='(3550) Link', lc=f'{Y34}/lcdb_lcs/stacked/3550_Link_lc.csv',
                  period_hr=9.833578, tag='link'),
+    # (3570) Wuyeesun: aov_F 1638 -- the strongest folded signal of the four -- 4,390 pts,
+    # 37 covered cycles, and an LCDB period (15.432 h) that agrees with ours to 0.1%.
+    'wuyeesun': dict(name='(3570) Wuyeesun', lc=f'{Y34}/lcdb_lcs/stacked/3570_Wuyeesun_lc.csv',
+                     period_hr=15.44776551488055, tag='wuyeesun'),
 }
 # Resolution of the convex model. NROWS sets the triangulation of the Gaussian image
 # (facets ~ 8*NROWS^2 + 2), HARM the degree/order of the spherical-harmonic expansion of the

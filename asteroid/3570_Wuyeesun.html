@@ -1,0 +1,54 @@
+<!doctype html><meta charset="utf-8">
+<title>(3570) Wuyeesun — TESSELLATE asteroid catalogue</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../assets/viewer.css">
+<!-- (3570) Wuyeesun Shape Model -->
+
+
+<canvas id="c" role="img" aria-label="Interactive rotatable 3D convex shape model of asteroid (3570) Wuyeesun, coloured by relative albedo"></canvas>
+
+<div class="panel info">
+  <p class="eyebrow">TESS convex inversion</p>
+  <h1>(3570) Wuyeesun</h1>
+  <p class="sec" style="margin-top:0">Physical properties</p>
+  <div class="stat-row"><span class="stat-label">Taxonomic type</span><span class="stat-value">&mdash;</span></div><div class="stat-row"><span class="stat-label">Diameter</span><span class="stat-value">20.0 km</span></div><div class="stat-row"><span class="stat-label">Geometric albedo</span><span class="stat-value">0.160</span></div><div class="stat-row"><span class="stat-label">Absolute mag <em>H</em></span><span class="stat-value">11.39</span></div><div class="stat-row"><span class="stat-label">LCDB period</span><span class="stat-value">15.4320 hr</span></div>
+  <p class="sec">TESSELLATE solution</p>
+  <div class="stat-row"><span class="stat-label">Rotation period</span><span class="stat-value">15.44777 hr</span></div>
+  <div class="stat-row"><span class="stat-label">Amplitude</span><span class="stat-value">0.602 mag</span></div>
+  <div class="stat-row"><span class="stat-label">Axis ratios <em>a/b</em>, <em>b/c</em></span><span class="stat-value">1.35, 1.49</span></div>
+  <div class="stat-row"><span class="stat-label">Observations</span><span class="stat-value">4,475 pts / 5 visits</span></div>
+  <div class="stat-row"><span class="stat-label">Baseline</span><span class="stat-value">50.4 d</span></div>
+  <div class="stat-row"><span class="stat-label">Phase-angle range</span><span class="stat-value">13.05 deg</span></div>
+  <div class="stat-row"><span class="stat-label">Aspect angle (TESS)</span><span class="stat-value">63.7 deg</span></div>
+  <div class="stat-row"><span class="stat-label">Facets</span><span class="stat-value">289</span></div>
+  <div class="stat-row"><span class="stat-label">Pole spread (&lambda; circ-std)</span><span class="stat-value">165 deg</span></div>
+  
+  <p class="sec">Downloads</p><div class="dl"><a href="../data/shapes/3570_Wuyeesun.json" download>shape model (JSON mesh)</a><a href="../data/lightcurves/3570_Wuyeesun.json" download>folded lightcurve (JSON)</a><a href="../data/lightcurves/3570_Wuyeesun_stacked.csv.gz" download>full stacked lightcurve (CSV.gz, 339 KB)</a></div><div class="caveat">
+    Only 13.05&deg; of phase-angle coverage &mdash; one viewing aspect.
+    The pole does not converge across starting points, so the shape is real but its
+    ORIENTATION is arbitrary.
+    Albedo colouring assumes all residual is albedo rather than unmodelled shape; the two are
+    degenerate in disc-integrated photometry.
+  </div>
+</div>
+
+<div class="panel ctrl">
+  <div class="row" role="group" aria-label="Rotation mode">
+    <button class="btn" id="mLock" aria-pressed="true">Locked to axis</button>
+    <button class="btn" id="mFree" aria-pressed="false">Free rotate</button>
+    <button class="btn" id="reset">Reset</button>
+  </div>
+  <div class="row" id="playrow">
+    <button class="btn" id="spin" aria-pressed="false">&#9654; Play</button>
+    <label for="ph">Phase</label><input type="range" id="ph" min="0" max="1000" value="0">
+    <span class="stat-value" id="phv">0.000</span>
+  </div>
+  <p class="hint" id="hint">Snapped to the TESS viewing geometry. Drag horizontally to turn the
+     body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a
+     steady rate.</p>
+  <canvas id="lc" aria-label="Phase-folded lightcurve, one period, with a marker tracking the displayed rotation"></canvas>
+</div>
+
+
+<script>window.AST={"key":"3570_Wuyeesun","has_lc":true,"shape":"../data/shapes/3570_Wuyeesun.json","lc":"../data/lightcurves/3570_Wuyeesun.json","D":{"alb":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],"weak":[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false],"lo":1.0,"hi":1.0,"lut":[[0,32,76],[60,80,110],[124,123,120],[200,180,100],[255,233,69]],"camQ":[-0.18077836381319207,0.29123751844292833,0.7981518367698072,0.4954326760410674],"sunCam":[0.11122289656044589,0.1355219410247271,0.9845116915413422],"aspect":63.65780418232866,"geoAlbedo":0.16,"tint":[1.0,1.0,1.0],"spec":null}};</script>
+<script src="../assets/viewer.js"></script>
