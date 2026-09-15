@@ -82,14 +82,14 @@
   <div class="kpi">
     <div><div class="v">16,427</div><div class="l">rotation periods</div></div>
     <div><div class="v">12,068</div><div class="l">with no previously published period</div></div>
-    <div><div class="v">3,280</div><div class="l">longer than 24 hours</div></div>
+    <div><div class="v">3,255</div><div class="l">longer than 24 hours</div></div>
     <div><div class="v">46 days</div><div class="l">median observing baseline</div></div>
     <div><div class="v">1,384</div><div class="l">median measurements each</div></div>
   </div>
 
   <h2>Search the catalog</h2>
   <p class="note">Type a name or number for a quick look, or open one at random. Every object
-     has a page: 14,766 carry a convex shape model, and 1,661 have a period
+     has a page: 14,768 carry a convex shape model, and 1,659 have a period
      and folded lightcurve but no model, each stating why.</p>
   <div class="searchrow">
     <input id="q" type="search" placeholder="e.g. Eurydike, 3550, Link&hellip;" autocomplete="off">
@@ -111,7 +111,7 @@
   <h2>The population</h2>
   <div class="figs">
     <figure><img src="assets/period_hist.png" alt="Distribution of rotation periods">
-      <figcaption>Rotation periods. 3,280 objects turn more slowly than once a day,
+      <figcaption>Rotation periods. 3,255 objects turn more slowly than once a day,
       the regime ground-based photometry struggles to close.</figcaption></figure>
     <figure><img src="assets/spin_size.png" alt="Spin rate against diameter">
       <figcaption>Spin rate against size. The 2.2 hour barrier is where a loosely bound rubble pile
@@ -141,7 +141,7 @@
   </div>
 </main>
 <script>
-const IDX_URL='data/index.json?v=fbeb6b93';
+const IDX_URL='data/index.json?v=9058d6f6';
 const rows=document.getElementById('rows'), hits=document.getElementById('hits'),
       q=document.getElementById('q');
 let DATA=[], sortKey=null, sortDir=1;
