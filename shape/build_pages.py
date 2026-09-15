@@ -5,12 +5,16 @@ different layout from the single-object path (separate *_results.json / *_mesh_d
 through build_shape_viewer.py). This consumes the batch format directly and emits the same
 shell + data files, so pages from either path are identical to a visitor.
 
-CAMERA. The single-object path derived the viewing geometry from each object's per-epoch
-positions. That is unnecessary now: the pole is FIXED perpendicular to the mean observer
-direction, so every object is equator-on by construction and the camera is the same in body
-coordinates -- looking along +x with the spin axis (z) up. The Sun is placed near the observer
-because the phase angles here are small (a few degrees to ~20), so the terminator sits close to
-the limb either way.
+CAMERA. Read per object from shapes/cameras.csv (built by make_cameras.py), which recovers the
+real TESS viewing geometry from each object's per-epoch positions.
+
+An earlier version of this file hardcoded one camera for everything, arguing that a pole fixed
+perpendicular to the mean observer makes every object equator-on and therefore identical in body
+coordinates. That was wrong twice over. Azimuth about the spin axis is object-dependent and acts
+as a constant phase offset, so the viewer showed the wrong face at a given lightcurve phase; and
+the aspect is not 90 anyway -- measured across the catalogue it runs from about 67 to 105 deg.
+Without a camera row an object is SKIPPED rather than given a plausible-looking default, because
+a wrong orientation is worse than a missing page.
 
 Usage:
     python shape/build_pages.py shapes_in/            # all JSONs in a directory
@@ -25,12 +29,21 @@ Y34 = os.environ.get('Y34_DIR', '/Users/rridden/Documents/work/code/tess/asteroi
 BULK_BASE = os.environ.get('BULK_BASE', '../data/lightcurves')
 COORD_DP = 4
 
-# Equator-on camera, identical for every object: look along +x, spin axis up.
-# R_cam rows are the camera basis (x_c, y_c, z_c); z_c is the view direction.
-_ZC = np.array([1.0, 0.0, 0.0])                 # observer sits on the body's equator
-_YC = np.array([0.0, 0.0, 1.0])                 # spin axis points up on screen
-_XC = np.cross(_YC, _ZC)
-_RCAM = np.vstack([_XC, _YC, _ZC])
+CAMERAS = os.environ.get('CAMERAS', os.path.join(os.path.dirname(HERE), 'data', 'cameras.csv'))
+
+
+def load_cameras():
+    """key -> (camQ, sunCam, aspect), the real geometry recovered by make_cameras.py."""
+    import csv as _csv
+    out = {}
+    if not os.path.exists(CAMERAS):
+        return out
+    with open(CAMERAS) as fh:
+        for r in _csv.DictReader(fh):
+            out[r['key']] = ([float(r['q0']), float(r['q1']), float(r['q2']), float(r['q3'])],
+                             [float(r['sx']), float(r['sy']), float(r['sz'])],
+                             float(r['aspect']))
+    return out
 
 
 def _mat2quat(R):
@@ -50,12 +63,6 @@ def _mat2quat(R):
     q = np.array(q)
     return (q / np.linalg.norm(q)).tolist()
 
-
-CAMQ = _mat2quat(_RCAM)
-# Sun offset ~15 deg from the observer, within the real phase-angle range, so the body is lit
-# from slightly off-axis rather than flat-on.
-_a = np.radians(15.0)
-SUNCAM = (_RCAM @ (np.cos(_a) * _ZC + np.sin(_a) * _XC)).tolist()
 
 _TINT = {'M': [1.00, 0.93, 0.82], 'S': [1.00, 0.90, 0.76], 'C': [1.00, 0.98, 0.96]}
 
@@ -80,10 +87,13 @@ def stat(label, value):
             f'<span class="stat-value">{value}</span></div>')
 
 
-def build(path, phys):
+def build(path, phys, cams):
     d = json.load(open(path))
     s, mesh, lc = d['solution'], d['mesh'], d['lightcurve']
     key = s['key']
+    cam = cams.get(key)
+    if cam is None:
+        raise KeyError(f'no camera row for {key}')
     p = phys.get(s['designation'], {})
 
     os.makedirs(f'{ROOT}/data/shapes', exist_ok=True)
@@ -110,7 +120,8 @@ def build(path, phys):
         stat('Observations', f"{s['n_obs']:,} pts / {s['n_visits']} visits"),
         stat('Baseline', f"{s['baseline_days']:.1f} d"),
         stat('Facets', s.get('n_facets', '&mdash;')),
-        stat('Spin axis', 'assumed equator-on'),
+        stat('Spin axis', 'assumed, not fitted'),
+        stat('Viewing aspect', f'{cam[2]:.0f}&deg; from the pole'),
     ])
     dl = ['<p class="sec">Downloads</p><div class="dl">',
           f'<a href="../data/shapes/{key}.json" download>Shape model (JSON mesh)</a>',
@@ -128,7 +139,7 @@ def build(path, phys):
                   # colour, so it must be a readable surface tone. [0,32,76] is cividis's
                   # DARKEST entry and rendered the body near-black.
                   'lo': 1.0, 'hi': 1.0, 'lut': [[140, 138, 132]],
-                  'camQ': CAMQ, 'sunCam': SUNCAM, 'aspect': 90.0,
+                  'camQ': cam[0], 'sunCam': cam[1], 'aspect': cam[2],
                   'geoAlbedo': geo if geo else 0.10,
                   'tint': _TINT.get(spec[:1].upper() if spec else '', [1.0, 1.0, 1.0]),
                   'spec': spec if spec else 'unknown'}}
@@ -164,9 +175,9 @@ def build(path, phys):
     <label for="ph">Phase</label><input type="range" id="ph" min="0" max="1000" value="0">
     <span class="stat-value" id="phv">0.000</span>
   </div>
-  <p class="hint" id="hint">Viewed equator-on, with the assumed spin axis vertical. Drag
-     horizontally to turn the body about that axis &mdash; the lightcurve marker follows. Press
-     Play to rotate at a steady rate.</p>
+  <p class="hint" id="hint">Snapped to the TESS viewing geometry. Drag horizontally to turn the
+     body about its spin axis &mdash; the lightcurve marker follows. Press Play to rotate at a
+     steady rate.</p>
   <canvas id="lc" aria-label="Phase-folded lightcurve with a marker tracking the rotation"></canvas>
 </div>
 <script>window.AST={json.dumps(meta, separators=(',', ':'))};</script>
@@ -208,11 +219,14 @@ if __name__ == '__main__':
     if a.limit:
         files = files[:a.limit]
     phys = load_phys()
-    print(f'{len(files):,} shape files')
+    cams = load_cameras()
+    print(f'{len(files):,} shape files, {len(cams):,} cameras')
+    if not cams:
+        sys.exit(f'no cameras at {CAMERAS} -- run make_cameras.py first')
     n = 0
     for f in files:
         try:
-            build(f, phys)
+            build(f, phys, cams)
             n += 1
         except Exception as e:
             print(f'  {os.path.basename(f)}: {type(e).__name__}: {e}')
