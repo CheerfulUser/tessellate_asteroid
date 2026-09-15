@@ -289,7 +289,8 @@ html = f'''<title>{res['target']} Shape Model</title>
   <p class="sec">TESSELLATE solution</p>
   <div class="stat-row"><span class="stat-label">Rotation period</span><span class="stat-value">{res['adopted_period_hr']:.5f} hr</span></div>
   <div class="stat-row"><span class="stat-label">Amplitude</span><span class="stat-value">{AMP_MAG:.3f} mag</span></div>
-  <div class="stat-row"><span class="stat-label">Axis ratios <em>a/b</em>, <em>b/c</em></span><span class="stat-value">{res.get('bbox_a_over_b',float('nan')):.2f}, {res.get('bbox_b_over_c',float('nan')):.2f}</span></div>
+  <div class="stat-row"><span class="stat-label">Equatorial ratio</span><span class="stat-value">{res.get('equatorial_ratio',float('nan')):.2f}</span></div>
+  <div class="stat-row"><span class="stat-label">Polar / equatorial</span><span class="stat-value">{res.get('polar_ratio',float('nan')):.2f}</span></div>
   <div class="stat-row"><span class="stat-label">Observations</span><span class="stat-value">{res['n_observations']:,} pts / {res['n_sessions']} visits</span></div>
   <div class="stat-row"><span class="stat-label">Baseline</span><span class="stat-value">{res.get('baseline_days',0):.1f} d</span></div>
   <div class="stat-row"><span class="stat-label">Phase-angle range</span><span class="stat-value">{res['phase_angle_range_deg']:.2f} deg</span></div>

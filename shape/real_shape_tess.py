@@ -48,6 +48,7 @@ TARGETS = {
 # support function. 4/2 gave only 33 facets; 6/6 gives a few hundred. Raising these on
 # single-apparition data risks fitting noise, so the convexity regularisation matters more
 # here -- check that the fit rms does not degrade and the shape stays convex-plausible.
+CONVEXITY_W = float(os.environ.get('CI_CONVEX', 1.0))
 HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
 MIN_PTS = 50
@@ -97,7 +98,14 @@ def write_control(path, lam, bet, per):
         f.write(f'{bet}\t\t1\tinitial beta [deg] (0/1 - fixed/free)\n')
         f.write(f'{per}\t\t1\tinital period [hours] (0/1 - fixed/free)\n')
         f.write('0\t\t\tzero time [JD]\n0\t\t\tinitial rotation angle [deg]\n')
-        f.write('0.1\t\t\tconvexity regularization\n')
+        # Convexity regularisation, raised from 0.1. At 0.1 the solver dumps unconstrained area
+        # into a single facet on the spin axis -- (3550) Link put 16.2% of its surface in one
+        # face at latitude -84.8 deg. A facet on the rotation axis holds near-constant projected
+        # area through a rotation, and relative photometry absorbs constants into its per-session
+        # free scale, so that area is free. At 1.0 the largest facet falls to 3.7% and polar
+        # concentration from 44.1% to 21.4%, with the fit rms unchanged (0.0531 -> 0.0520):
+        # the cap was filler, not signal. See convexity_test.py.
+        f.write(f'{CONVEXITY_W}\t\t\tconvexity regularization\n')
         f.write(f'{HARM} {HARM}\t\t\tdegree and order of spherical harmonics expansion\n')
         f.write(f'{NROWS}\t\t\tnumber of rows\n')
         for line in ["0.5\t\t0\tphase funct. param. 'a' (0/1 - fixed/free)",
@@ -265,9 +273,16 @@ def main(key):
     else:
         v = np.array(Pm.vertices); v = v - v.mean(axis=0)
         fc = [list(f.vertices) for f in Pm.faces]
-    ext = np.sort(v.max(axis=0) - v.min(axis=0))[::-1]
+    # Axis ratios in the BODY frame, where z is the spin axis. Sorting all three extents and
+    # calling the top two "a/b" was wrong: for (3550) Link that returned 1.54, which was
+    # actually the POLAR ratio z/y, while its equatorial elongation is 1.10. Only the equatorial
+    # ratio relates to the lightcurve amplitude, so the two must be reported separately.
+    _e = v.max(axis=0) - v.min(axis=0)
+    eq_ratio = float(max(_e[0], _e[1]) / min(_e[0], _e[1]))     # equatorial major/minor
+    polar_ratio = float(_e[2] / min(_e[0], _e[1]))              # polar / equatorial minor
+    ext = np.sort(_e)[::-1]
     print(f'representative: lambda={best["lam"]:.2f} beta={best["bet"]:+.2f} '
-          f'P={best["per"]:.6f} h, {len(fc)} facets, a/b={ext[0]/ext[1]:.3f} b/c={ext[1]/ext[2]:.3f}')
+          f'P={best["per"]:.6f} h, {len(fc)} facets, equatorial {eq_ratio:.3f}, polar {polar_ratio:.3f}')
 
     json.dump({'recovered': {'verts': v.tolist(), 'facets': fc}},
               open(os.path.join(HERE, f'{tag}_mesh_data.json'), 'w'))
@@ -281,6 +296,7 @@ def main(key):
                    representative_period_hr=best['per'],
                    lambda_circ_std_deg=float(lcs_std), beta_std_deg=float(bet.std()),
                    starts_converged=bool(conv), bbox_a_over_b=float(ext[0] / ext[1]),
+                   equatorial_ratio=eq_ratio, polar_ratio=polar_ratio,
                    bbox_b_over_c=float(ext[1] / ext[2]), recovered_facets=len(fc)),
               open(os.path.join(HERE, f'{tag}_results.json'), 'w'), indent=2)
     print(f'wrote {tag}_results.json, {tag}_mesh_data.json')
