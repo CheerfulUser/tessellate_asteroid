@@ -72,33 +72,31 @@ which face produces which feature."""
 # gateway to a live DOI, so the references are confirmed rather than recalled.
 DATA_HEADING = 'Data and photometry'
 DATA = """Every lightcurve here is measured from TESS full-frame images by
-<strong>TESSELLATE</strong>, an untargeted search for variable and non-sidereal sources across
+<strong>TESSELLATE</strong>, an untargeted time domain search across
 the TESS archive
-(<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025,
-AJ 170, 186</a>; doi:10.3847/1538-3881/adf21b). TESSELLATE builds on the difference-imaging reduction in
-<strong>TESSreduce</strong>
-(<a href="https://ui.adsabs.harvard.edu/abs/2021ascl.soft12016R/abstract">Ridden-Harper et al.
-2021, ascl:2112.016</a>; <a href="https://arxiv.org/abs/2111.15006">arXiv:2111.15006</a>).
-Because TESS revisits the same field continuously, the resulting photometry is unusually well
-suited to rotation periods: the sampling is uniform and the coverage runs for weeks rather than
+(<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025</a>). 
+TESSELLATE builds on the difference-imaging reduction in <strong>TESSreduce</strong>
+(<a href="https://arxiv.org/abs/2111.15006">arXiv:2111.15006">Ridden-Harper et al.
+2021). Because TESS revisits the same field continuously, the resulting photometry is well
+suited to rotation periods: the sampling is near uniform and the coverage runs for weeks rather than
 hours."""
 
 # Credit for the inversion method and code, shown just above the caveat box.
 # Citations verified against ADS; each bibcode was resolved through the ADS link
 # gateway to a live DOI, so the references are confirmed rather than recalled.
-CREDIT_HEADING = 'Shape models and credit'
+CREDIT_HEADING = 'Shape models'
 CREDIT = """Shape models are produced by convex lightcurve inversion using
 <strong>convexinv</strong>, the implementation distributed with DAMIT. The method was developed
 by Kaasalainen &amp; Torppa
-(<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...24K/abstract">2001, Icarus 153,
-24</a>; doi:10.1006/icar.2001.6673) and Kaasalainen, Torppa &amp; Muinonen
-(<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...37K/abstract">2001, Icarus 153,
-37</a>; doi:10.1006/icar.2001.6674). The code and the Minkowski reconstruction that turns the fitted facet areas into a
+(<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...24K/abstract">2001</a>) 
+and Kaasalainen, Torppa &amp; Muinonen 
+(<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...37K/abstract">2001</a>). 
+The code and the Minkowski reconstruction that turns the fitted facet areas into a
 closed polyhedron are distributed through <strong>DAMIT</strong>, the Database of Asteroid
 Models from Inversion Techniques
 (<a href="https://ui.adsabs.harvard.edu/abs/2010A&A...513A..46D/abstract">Ďurech, Sidorin
-&amp; Kaasalainen 2010, A&amp;A 513, A46</a>; doi:10.1051/0004-6361/200912693). The rotation periods, the reliability
-classification and the shape fits presented here are ours; the inversion method and code are
+&amp; Kaasalainen 2010</a>). The rotation periods, the reliability
+classification and the shape fits presented here are produced by TESSELLATE; the inversion method and code are
 not."""
 
 # The amber box at the foot of the page.

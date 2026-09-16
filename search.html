@@ -204,7 +204,7 @@ function restoreState(){
 window.addEventListener('pagehide', saveState);
 document.addEventListener('click', e=>{ if(e.target.closest('#rows a')) saveState(); });
 
-fetch('data/index.json?v=9058d6f6').then(r=>r.json()).then(j=>{
+fetch('data/index.json?v=8e539fed').then(r=>r.json()).then(j=>{
   DATA=j;
   const v=restoreState();
   apply();

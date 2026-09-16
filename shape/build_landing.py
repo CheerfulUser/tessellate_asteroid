@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 Y34 = os.environ.get('Y34_DIR', '/Users/rridden/Documents/work/code/tess/asteroid/y3_4')
 CAT = f'{Y34}/population_figs/all_sector_report_v5_doubled.csv'
-FIGS = f'{Y34}/population_figs/site'
+FIGS = f'{Y34}/population_figs/web'
 
 
 def sn(d):
@@ -71,18 +71,20 @@ try:
     ho = pd.read_csv(f'{Y34}/comparison_data/cluster_features.csv')[
         ['designation', 'odd_over_even']]
     r = r.merge(ho, on='designation', how='left')
-    # cluster_features.csv holds the harmonics of the PRE-doubling fold for the 80 objects whose
-    # periods were doubled -- verified: their feature period is exactly half the catalogue period,
-    # while all 16,347 others match 1.0000. Using it unchanged reported those objects as
-    # monomodal when they are strongly symmetric at their adopted period. Override with values
-    # re-measured from the refit folded curves.
-    fix = pd.read_csv(f'{ROOT}/data/symmetry_doubled.csv')[['designation', 'odd_over_even']]
+    # cluster_features.csv holds the harmonics of the fold as it was when that file was
+    # built. For every object whose period was later corrected it therefore describes the WRONG
+    # fold, and the error is not subtle: at twice the true period the fold contains two
+    # near-identical copies of one rotation, odd power collapses, and an asymmetric object is
+    # published as symmetric. (453) Tea read +0.96 measured at 13.6192 h against its adopted
+    # 6.8096 h. symmetry_fixed.csv carries odd/even re-measured at the adopted period for every
+    # affected object; it supersedes the earlier doubled-only override.
+    fix = pd.read_csv(f'{ROOT}/data/symmetry_fixed.csv')[['designation', 'odd_over_even']]
     fix = fix.rename(columns={'odd_over_even': '_oe_fix'})
     r = r.merge(fix, on='designation', how='left')
     n_fix = int(r._oe_fix.notna().sum())
     r['odd_over_even'] = r._oe_fix.where(r._oe_fix.notna(), r.odd_over_even)
     r = r.drop(columns=['_oe_fix'])
-    print(f'  symmetry re-measured at the adopted period for {n_fix} doubled objects')
+    print(f'  symmetry re-measured at the adopted period for {n_fix} objects')
     oe = r.odd_over_even.replace([np.inf, -np.inf], np.nan)
     r['sym'] = np.where(oe.isna(), None,
                np.where(oe >= MONOMODAL_OE, 'monomodal',
