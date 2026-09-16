@@ -197,7 +197,13 @@ function draw(){
     ctx.closePath();
     ctx.fillStyle = `rgb(${Math.round(c[0]*lit)},${Math.round(c[1]*lit)},${Math.round(c[2]*lit)})`;
     ctx.fill();
-    ctx.strokeStyle = D.weak[f.i] ? 'rgba(224,164,88,0.55)' : 'rgba(255,255,255,0.16)';
+    // Fade the outline as a facet turns edge-on. The FILL shrinks to nothing on its own as
+    // n_z -> 0, but the stroke is a constant-width line, so without this a facet crossing the
+    // limb drops a visible outline in one frame instead of fading -- 8 to 11 facets sit within
+    // 0.06 of edge-on at any phase, which is the residual flicker on elongated bodies.
+    const limb = Math.min(1, f.n[2] / 0.12);
+    ctx.strokeStyle = D.weak[f.i] ? `rgba(224,164,88,${0.55*limb})`
+                                  : `rgba(255,255,255,${0.16*limb})`;
     ctx.lineWidth = D.weak[f.i] ? 1.1 : 0.5;
     ctx.stroke();
   }
