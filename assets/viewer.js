@@ -192,20 +192,24 @@ function draw(){
       ? 0.34 + 0.66*Math.max(0, f.n[0]*D.sunCam[0]+f.n[1]*D.sunCam[1]+f.n[2]*D.sunCam[2])
       : 0.34 + 0.66*Math.max(0, f.n[2]);
     const c = ramp(D.alb[f.i]);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, f.n[2] / 0.10);
     ctx.beginPath();
     f.p.forEach((q,k)=>{const X=w/2+q[0]*S, Y=cy-q[1]*S; k?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
     ctx.closePath();
     ctx.fillStyle = `rgb(${Math.round(c[0]*lit)},${Math.round(c[1]*lit)},${Math.round(c[2]*lit)})`;
     ctx.fill();
-    // Fade the outline as a facet turns edge-on. The FILL shrinks to nothing on its own as
-    // n_z -> 0, but the stroke is a constant-width line, so without this a facet crossing the
-    // limb drops a visible outline in one frame instead of fading -- 8 to 11 facets sit within
-    // 0.06 of edge-on at any phase, which is the residual flicker on elongated bodies.
-    const limb = Math.min(1, f.n[2] / 0.12);
-    ctx.strokeStyle = D.weak[f.i] ? `rgba(224,164,88,${0.55*limb})`
-                                  : `rgba(255,255,255,${0.16*limb})`;
+    // Fade the WHOLE facet as it turns edge-on, fill included.
+    //
+    // Fading only the stroke was not enough. The fill's geometric area does fall to zero at the
+    // limb, but canvas renders a sub-pixel sliver as an ANTIALIASED line with partial coverage,
+    // so it stays visible far below one pixel of area and then vanishes outright when the facet
+    // is culled at n_z = 0. That step is the flicker. Applying the same factor through
+    // globalAlpha makes both fill and stroke reach zero exactly when the facet is dropped.
+    ctx.strokeStyle = D.weak[f.i] ? 'rgba(224,164,88,0.55)' : 'rgba(255,255,255,0.16)';
     ctx.lineWidth = D.weak[f.i] ? 1.1 : 0.5;
     ctx.stroke();
+    ctx.restore();
   }
   drawLC();
 }
