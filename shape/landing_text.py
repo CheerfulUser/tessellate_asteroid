@@ -76,8 +76,7 @@ DATA = """Every lightcurve here is measured from TESS full-frame images by
 the TESS archive
 (<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025</a>). 
 TESSELLATE builds on the difference-imaging reduction in <strong>TESSreduce</strong>
-(<a href="https://arxiv.org/abs/2111.15006">arXiv:2111.15006">Ridden-Harper et al.
-2021). Because TESS revisits the same field continuously, the resulting photometry is well
+(<a href="https://arxiv.org/abs/2111.15006">Ridden-Harper et al. 2021</a>). Because TESS revisits the same field continuously, the resulting photometry is well
 suited to rotation periods: the sampling is near uniform and the coverage runs for weeks rather than
 hours."""
 

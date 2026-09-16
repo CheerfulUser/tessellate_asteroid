@@ -151,11 +151,33 @@ def _t(v):
     return _BARE_AMP.sub('&amp;', ' '.join(str(v).format(**S).split()))
 
 
-T = {k: _t(v) for k, v in vars(TXT).items()
-     if k.isupper() and isinstance(v, str)}
+def _check_markup(name, v):
+    """Fail the build on unbalanced inline tags in hand-edited copy.
+
+    An unclosed <a> does not look broken in the source but swallows the rest of the paragraph
+    into the link, and a stray '">' from an interrupted edit renders as literal text. Both
+    shipped once. Cheap to catch here, invisible until someone reads the page otherwise."""
+    for tag in ('a', 'strong', 'em'):
+        o = len(re.findall(rf'<{tag}\b', v))
+        c = len(re.findall(rf'</{tag}>', v))
+        if o != c:
+            raise SystemExit(f'landing_text.{name}: {o} <{tag}> but {c} </{tag}> -- '
+                             f'unbalanced tag, fix before building')
+    if re.search(r'">[^<]*">', v):
+        raise SystemExit(f'landing_text.{name}: stray \'">\' inside an attribute -- '
+                         f'looks like a half-finished edit')
+
+
+T = {}
+for k, v in vars(TXT).items():
+    if k.isupper() and isinstance(v, str):
+        _check_markup(k, v)
+        T[k] = _t(v)
 T['KPIS'] = ''.join(
     f'<div><div class="v">{_t(val)}</div><div class="l">{_t(lab)}</div></div>'
     for val, lab in TXT.KPIS)
+for _k, _v in TXT.CAPTIONS.items():
+    _check_markup(f'CAPTIONS[{_k}]', _v)
 T['CAPTIONS'] = {k: _t(v) for k, v in TXT.CAPTIONS.items()}
 
 html = f'''<!doctype html><meta charset="utf-8">
@@ -181,9 +203,11 @@ html = f'''<!doctype html><meta charset="utf-8">
   .note a{{color:var(--accent);text-decoration:none;border-bottom:1px solid #a78bfa55}}
   .note a:hover{{border-bottom-color:var(--accent)}}
   .note a:focus-visible{{outline:2px solid var(--accent);outline-offset:2px}}
-  .figs figure{{margin:0;background:var(--panel);border:1px solid var(--panel-border);
+  /* opaque, and the same literal _figstyle renders the figures on -- a translucent card
+     composites to a colour the figure cannot know, so they drifted apart */
+  .figs figure{{margin:0;background:#0f141c;border:1px solid var(--panel-border);
     border-radius:9px;padding:10px}}
-  .figs img{{width:100%;height:auto;border-radius:5px;display:block;background:#fff}}
+  .figs img{{width:100%;height:auto;border-radius:5px;display:block}}
   .figs figcaption{{font-size:11.5px;color:var(--text-dim);margin-top:7px;line-height:1.45}}
   .searchrow{{display:flex;gap:10px;align-items:stretch}}
   .searchrow #q{{flex:1;min-width:0}}

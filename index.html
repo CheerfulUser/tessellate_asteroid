@@ -21,9 +21,11 @@
   .note a{color:var(--accent);text-decoration:none;border-bottom:1px solid #a78bfa55}
   .note a:hover{border-bottom-color:var(--accent)}
   .note a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .figs figure{margin:0;background:var(--panel);border:1px solid var(--panel-border);
+  /* opaque, and the same literal _figstyle renders the figures on -- a translucent card
+     composites to a colour the figure cannot know, so they drifted apart */
+  .figs figure{margin:0;background:#0f141c;border:1px solid var(--panel-border);
     border-radius:9px;padding:10px}
-  .figs img{width:100%;height:auto;border-radius:5px;display:block;background:#fff}
+  .figs img{width:100%;height:auto;border-radius:5px;display:block}
   .figs figcaption{font-size:11.5px;color:var(--text-dim);margin-top:7px;line-height:1.45}
   .searchrow{display:flex;gap:10px;align-items:stretch}
   .searchrow #q{flex:1;min-width:0}
@@ -132,7 +134,7 @@
   <p class="note">Each object page carries its phase-folded lightcurve with per-bin uncertainties, the full stacked photometry behind it, and a rotatable convex shape model &mdash; all downloadable, and the shape model is synchronised to the lightcurve so you can watch which face produces which feature.</p>
 
   <h2>Data and photometry</h2>
-  <p class="note">Every lightcurve here is measured from TESS full-frame images by <strong>TESSELLATE</strong>, an untargeted time domain search across the TESS archive (<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025</a>). TESSELLATE builds on the difference-imaging reduction in <strong>TESSreduce</strong> (<a href="https://arxiv.org/abs/2111.15006">arXiv:2111.15006">Ridden-Harper et al. 2021). Because TESS revisits the same field continuously, the resulting photometry is well suited to rotation periods: the sampling is near uniform and the coverage runs for weeks rather than hours.</p>
+  <p class="note">Every lightcurve here is measured from TESS full-frame images by <strong>TESSELLATE</strong>, an untargeted time domain search across the TESS archive (<a href="https://ui.adsabs.harvard.edu/abs/2025AJ....170..186R/abstract">Roxburgh et al. 2025</a>). TESSELLATE builds on the difference-imaging reduction in <strong>TESSreduce</strong> (<a href="https://arxiv.org/abs/2111.15006">Ridden-Harper et al. 2021</a>). Because TESS revisits the same field continuously, the resulting photometry is well suited to rotation periods: the sampling is near uniform and the coverage runs for weeks rather than hours.</p>
 
   <h2>Shape models</h2>
   <p class="note">Shape models are produced by convex lightcurve inversion using <strong>convexinv</strong>, the implementation distributed with DAMIT. The method was developed by Kaasalainen &amp; Torppa (<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...24K/abstract">2001</a>) and Kaasalainen, Torppa &amp; Muinonen (<a href="https://ui.adsabs.harvard.edu/abs/2001Icar..153...37K/abstract">2001</a>). The code and the Minkowski reconstruction that turns the fitted facet areas into a closed polyhedron are distributed through <strong>DAMIT</strong>, the Database of Asteroid Models from Inversion Techniques (<a href="https://ui.adsabs.harvard.edu/abs/2010A&amp;A...513A..46D/abstract">Ďurech, Sidorin &amp; Kaasalainen 2010</a>). The rotation periods, the reliability classification and the shape fits presented here are produced by TESSELLATE; the inversion method and code are not.</p>
