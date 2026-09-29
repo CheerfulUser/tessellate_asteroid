@@ -52,7 +52,8 @@ def main(argv_tag=None):
             out.append(np.sum(ar[v] * mu[v] * mu0[v] * (1 / (mu[v] + mu0[v]) + 0.1)))
         out = np.array(out); return out / out.mean()
 
-    jd = df['mjd'].values + 2400000.5
+    from batch_shapes import lt_jd
+    jd = lt_jd(df, ev)
     op = ((phi0 + 2 * np.pi * (jd - t0) / (per_hr / 24.0)) / (2 * np.pi)) % 1.0
     fl = df['rel_flux'].values
     NB = 72; bb = np.clip((op * NB).astype(int), 0, NB - 1)

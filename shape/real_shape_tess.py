@@ -78,23 +78,12 @@ def perpendicular_poles(ev, n=12):
     Picking the direction nearest the celestial pole -- the obvious-looking default -- landed on
     very nearly the worst option. So the circle is scanned and the best orientation fitted,
     rather than assumed.
+
+    Delegates to batch_shapes so the pole and the geometry are built in one (ecliptic) frame
+    in one place -- a second copy of this code is how the equatorial/ecliptic mix existed twice.
     """
-    import numpy as np
-    from astropy.coordinates import SkyCoord
-    en = (ev / np.linalg.norm(ev, axis=1, keepdims=True)).mean(axis=0)
-    en /= np.linalg.norm(en)
-    a = np.array([0.0, 0.0, 1.0]) - np.dot([0.0, 0.0, 1.0], en) * en
-    if np.linalg.norm(a) < 1e-6:
-        a = np.array([1.0, 0.0, 0.0]) - en[0] * en
-    a /= np.linalg.norm(a)
-    b = np.cross(en, a)
-    out = []
-    for ang in np.linspace(0, np.pi, n, endpoint=False):     # pi: +v and -v are the same axis
-        v = np.cos(ang) * a + np.sin(ang) * b
-        c = SkyCoord(x=v[0], y=v[1], z=v[2], representation_type='cartesian',
-                     frame='icrs').barycentrictrueecliptic
-        out.append((float(c.lon.deg), float(c.lat.deg)))
-    return out
+    from batch_shapes import perpendicular_poles as _pp
+    return _pp(ev, n)
 
 
 def binned_rms(df, model, period_hr, nb=72):
@@ -130,13 +119,9 @@ START_POLES = _ALL_POLES      # replaced per object when FIX_POLE is set
 
 
 def build_geometry(df):
-    t = Time(df['mjd'].values, format='mjd', scale='utc')
-    ra, dec = np.radians(df['ra'].values), np.radians(df['dec'].values)
-    u = np.column_stack([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)])
-    ep = get_body_barycentric('earth', t).xyz.to('au').value.T
-    sp = get_body_barycentric('sun', t).xyz.to('au').value.T
-    ap = ep + df['delta_au'].values[:, None] * u
-    return sp - ap, ep - ap
+    """Ecliptic J2000 asteroid-centric Sun/Earth vectors -- see batch_shapes.build_geometry."""
+    from batch_shapes import build_geometry as _bg
+    return _bg(df)
 
 
 def prepare(df):
@@ -152,13 +137,15 @@ def prepare(df):
 
 
 def write_lcs(df, sv, ev, path):
-    jd = df['mjd'].values + 2400000.5; fl = df['rel_flux'].values; vis = df['visit'].values
+    """Light-time-corrected epochs; code 0 = relative lightcurve (see batch_shapes.write_lcs)."""
+    from batch_shapes import lt_jd
+    jd = lt_jd(df, ev); fl = df['rel_flux'].values; vis = df['visit'].values
     order = list(pd.unique(vis))
     with open(path, 'w') as f:
         f.write(f'{len(order)}\n')
         for v in order:
             m = np.where(vis == v)[0]
-            f.write(f'{len(m)} 1\n')
+            f.write(f'{len(m)} 0\n')
             for i in m:
                 f.write(f'{jd[i]:.6f} {fl[i]:.6f} '
                         f'{sv[i,0]:.6f} {sv[i,1]:.6f} {sv[i,2]:.6f} '
@@ -377,9 +364,12 @@ def main(key):
     # calling the top two "a/b" was wrong: for (3550) Link that returned 1.54, which was
     # actually the POLAR ratio z/y, while its equatorial elongation is 1.10. Only the equatorial
     # ratio relates to the lightcurve amplitude, so the two must be reported separately.
+    # Caliper widths, not the x/y bounding box (see batch_shapes.caliper_widths).
+    from batch_shapes import caliper_widths
     _e = v.max(axis=0) - v.min(axis=0)
-    eq_ratio = float(max(_e[0], _e[1]) / min(_e[0], _e[1]))     # equatorial major/minor
-    polar_ratio = float(_e[2] / min(_e[0], _e[1]))              # polar / equatorial minor
+    _wmax, _wmin = caliper_widths(np.asarray(v))
+    eq_ratio = float(_wmax / _wmin)                              # equatorial major/minor
+    polar_ratio = float(_e[2] / _wmin)                           # polar / equatorial minor
     ext = np.sort(_e)[::-1]
     print(f'representative: lambda={best["lam"]:.2f} beta={best["bet"]:+.2f} '
           f'P={best["per"]:.6f} h, {len(fc)} facets, equatorial {eq_ratio:.3f}, polar {polar_ratio:.3f}')

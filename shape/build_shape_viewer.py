@@ -63,7 +63,10 @@ bi = int(np.argmin([abs(s['lambda_deg'] - res['representative_lambda_deg'])
 pl = open(os.path.join(HERE, f'{TAG}_params_{bi}.txt')).read().split()
 per_hr, t0_jd, phi0 = float(pl[2]), float(pl[3]), float(pl[4])
 df = prepare(pd.read_csv(C['lc']))
-jd = df['mjd'].values + 2400000.5
+from real_shape_tess import build_geometry  # noqa: E402
+from batch_shapes import lt_jd  # noqa: E402
+_sv, _ev = build_geometry(df)
+jd = lt_jd(df, _ev)  # the model's rotation (t0, phi0) is defined on light-time-corrected epochs
 phase = ((phi0 + 2 * np.pi * (jd - t0_jd) / (per_hr / 24.0)) / (2 * np.pi)) % 1.0
 fl = df['rel_flux'].values
 NB = 72
@@ -121,8 +124,6 @@ except Exception as e:
 # Rz(phi) leaves a frame whose z is the spin axis and in which the observer sits at a nearly
 # fixed direction -- the aspect changes by well under a degree over these observations. Snapping
 # the camera there shows the body as TESS actually saw it.
-from real_shape_tess import build_geometry  # noqa: E402
-_sv, _ev = build_geometry(df)
 _en = _ev / np.linalg.norm(_ev, axis=1, keepdims=True)
 _sn = _sv / np.linalg.norm(_sv, axis=1, keepdims=True)
 _l, _b = np.radians(res['representative_lambda_deg']), np.radians(res['representative_beta_deg'])
