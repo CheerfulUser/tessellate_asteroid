@@ -34,7 +34,6 @@ sys.path.insert(0, HERE)
 import batch_shapes as bs  # noqa: E402
 from build_pages import stat, POLE_LABEL  # noqa: E402
 
-bs.MINKOWSKI = os.environ.get("MINKOWSKI", bs.MINKOWSKI)   # DAMIT minkowski binary
 NB = bs.NB
 COORD_DP = 4
 

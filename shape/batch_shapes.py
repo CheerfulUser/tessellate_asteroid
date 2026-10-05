@@ -5,9 +5,9 @@ discovered again 16,000 times:
 
   convexinv POINTS_MAX   A TESS visit runs continuously for days, so one session can exceed the
                          compile-time 2000-point limit and convexinv rejects the WHOLE object.
-                         (3550) Link hit this at 2,061 points. constants.h is patched to 3000 by
-                         setup_binaries.sh; this script also splits any session that still
-                         exceeds the limit rather than losing the object.
+                         (3550) Link hit this at 2,061 points. The fork CheerfulUser/DAMIT-convex
+                         allocates its arrays at run time (no limit); this script still splits
+                         any session longer than POINTS_MAX, which costs only a free scale each.
   silent failures        convexinv writes its reason to stderr. The first version discarded it,
                          so eight poles reported a bare "FAILED" with no cause. stderr is
                          captured and recorded per object.
@@ -37,8 +37,11 @@ import argparse, json, os, re, subprocess, sys, time
 import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONVEXINV = os.path.join(HERE, 'DAMIT-convex/convexinv/convexinv')
-MINKOWSKI = os.path.join(HERE, 'DAMIT-convex/minkowski')
+# binaries from the fork CheerfulUser/DAMIT-convex (`make` in its top directory builds both);
+# DAMIT_CONVEX is the clone, defaulting to shape/DAMIT-convex (the symlink layout used on ozstar)
+DAMIT_CONVEX = os.environ.get('DAMIT_CONVEX', os.path.join(HERE, 'DAMIT-convex'))
+CONVEXINV = os.path.join(DAMIT_CONVEX, 'convexinv/convexinv')
+MINKOWSKI = os.path.join(DAMIT_CONVEX, 'minkowski')
 POINTS_MAX = int(os.environ.get('CI_POINTS_MAX', 3000))
 HARM = int(os.environ.get('CI_HARM', 6))
 NROWS = int(os.environ.get('CI_NROWS', 6))
@@ -339,7 +342,11 @@ def process(des, period_hr, lc_path, workdir, outdir):
 
         # folded curve + per-session-rescaled model on one grid
         pl = open(best['params']).read().split()
-        t0j, phi0 = float(pl[3]), float(pl[4])
+        # convexinv writes phi0 in DEGREES (convexinv.c: Phi_0 * RAD2DEG); 0 in every run so far
+        t0j, phi0 = float(pl[3]), np.radians(float(pl[4]))
+        # rotation zero-point, so the model can be phased to any epoch (e.g. an occultation):
+        # phi(t) = phi0 + 2 pi (t_lt - t0) / P, t_lt light-time corrected, as convexinv defines it
+        rec.update(rotation_t0_jd=t0j, rotation_phi0_rad=phi0)
         jd = lt_jd(df, ev)
         ph = ((phi0 + 2 * np.pi * (jd - t0j) / (best['per'] / 24.0)) / (2 * np.pi)) % 1.0
         fl = df['rel_flux'].values

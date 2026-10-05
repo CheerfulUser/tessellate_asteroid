@@ -24,8 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, 'polyhedrec')); sys.path.insert(0, HERE)
 from polyhedrec_fast import reconstruct_fast  # noqa: E402
 
-CONVEXINV = os.path.join(HERE, 'DAMIT-convex/convexinv/convexinv')
-MINKOWSKI = os.path.join(HERE, 'DAMIT-convex/minkowski')
+from batch_shapes import CONVEXINV, MINKOWSKI  # noqa: E402  (located via DAMIT_CONVEX)
 Y34 = '/Users/rridden/Documents/work/code/tess/asteroid/y3_4'
 
 TARGETS = {
