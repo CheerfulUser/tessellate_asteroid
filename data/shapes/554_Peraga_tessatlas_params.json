@@ -1,0 +1,21 @@
+{
+ "model": "TESS + ATLAS + Gaia",
+ "pole_lambda_deg": 66.2947682437,
+ "pole_lambda_err_deg": 0.496592,
+ "pole_beta_deg": -69.6742989862,
+ "pole_beta_err_deg": 0.348908,
+ "frame": "ecliptic J2000",
+ "period_hr": 13.712035445139,
+ "period_err_hr": 4.18962e-06,
+ "rotation_t0_jd": 2456921.0,
+ "rotation_phi0_rad": 0.0,
+ "phase_function": {
+  "a": 7.319625746,
+  "d": 0.2803692836,
+  "k": 2.033478259
+ },
+ "equatorial_ratio": 1.100311581423211,
+ "polar_ratio": 0.9117322444260448,
+ "shape": "554_Peraga_tessatlas.json",
+ "n_tess_points": 7340
+}

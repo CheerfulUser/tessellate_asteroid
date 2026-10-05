@@ -93,6 +93,23 @@ def _asset_v(name):
         return "0"
 
 
+def pole_cell(s):
+    """Ecliptic pole as 'lambda, beta' on one line. Catalogue TESS-only fits hold the pole fixed
+    (chosen from orientations around the circle perpendicular to the mean line of sight), so it is
+    tagged assumed; a fitted pole (e.g. TESS + ATLAS) shows its 1-sigma uncertainties instead."""
+    lam, bet = s.get('representative_lambda_deg'), s.get('representative_beta_deg')
+    if lam is None or bet is None:
+        return '&mdash;'
+    el, eb = s.get('pole_lambda_err_deg'), s.get('pole_beta_err_deg')
+    pm = lambda e: f' &plusmn; {e:.1f}' if e is not None else ''
+    # a pole held fixed in the inversion (catalogue TESS-only fits) is tagged as assumed
+    tag = ' (assumed)' if s.get('pole_fixed', True) else ''
+    return f'<span style="white-space:nowrap">{lam:.1f}{pm(el)}&deg;, {bet:+.1f}{pm(eb)}&deg;{tag}</span>'
+
+
+POLE_LABEL = 'Pole (&lambda;, &beta;)'
+
+
 def stat(label, value):
     return (f'<div class="stat-row"><span class="stat-label">{label}</span>'
             f'<span class="stat-value">{value}</span></div>')
@@ -124,6 +141,7 @@ def build(path, phys, cams):
     ])
     sol = ''.join([
         stat('Rotation period', f"{s['adopted_period_hr']:.5f} hours"),
+        stat(POLE_LABEL, pole_cell(s)),           # same place as in the TESS + ATLAS table
         stat('Amplitude', f"{s['amplitude_mag']:.3f} mag" if s.get('amplitude_mag') else '&mdash;'),
         stat('Lightcurve symmetry', symmetry_cell(p)),
         stat('Equatorial ratio', f"{s['equatorial_ratio']:.2f}" if s.get('equatorial_ratio') else '&mdash;'),
@@ -131,7 +149,6 @@ def build(path, phys, cams):
         stat('Observations', f"{s['n_obs']:,} pts / {s['n_visits']} visits"),
         stat('Baseline', f"{s['baseline_days']:.1f} d"),
         stat('Facets', s.get('n_facets', '&mdash;')),
-        stat('Spin axis', 'assumed, not fitted'),
         stat('Viewing aspect', f'{cam[2]:.0f}&deg; from the pole'),
     ])
     dl = ['<p class="sec">Downloads</p><div class="dl">',
@@ -143,6 +160,8 @@ def build(path, phys, cams):
     dl.append('</div>')
 
     meta = {'key': key, 'has_lc': bool(lc.get('phase')),
+            # catalogue diameter for the viewer's km scale bar (absent -> no bar)
+            'diam_km': p.get('diam'),
             'shape': f'../data/shapes/{key}.json',
             'lc': f'../data/lightcurves/{key}.json',
             'D': {'alb': [1.0] * len(mesh['fn']), 'weak': [False] * len(mesh['fn']),
@@ -169,11 +188,6 @@ def build(path, phys, cams):
   <p class="sec">TESSELLATE solution</p>
   {sol}
   {''.join(dl)}
-  <div class="caveat">
-    The spin axis is ASSUMED, not fitted: single-apparition data cannot determine a pole, and
-    every orientation fits this lightcurve about equally well. The shape is barely affected by
-    that choice, but its orientation in space carries no information.
-  </div>
 </div>
 <div class="panel ctrl">
   <div class="row" role="group" aria-label="Rotation mode">

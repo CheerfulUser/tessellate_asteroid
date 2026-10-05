@@ -50,8 +50,44 @@
 // rather than embedded: 73 KB per page x 16,000 objects exceeds the 1 GB GitHub
 // Pages limit. Everything below the fetch is unchanged from the single-page viewer.
 let D;
+// Model choice for objects that also have a TESS + ATLAS (+ Gaia) fit (AST.alt): that model is the
+// default, and ?model=tess shows the TESS-only catalogue model. Switching reloads the page with the
+// other parameter rather than rebuilding in place, so no event handler is ever bound twice.
+function modelChoice(A0){
+  const useAlt = !!A0.alt && new URLSearchParams(location.search).get('model') !== 'tess';
+  try{
+    document.querySelectorAll('[data-model]').forEach(el=>{
+      el.hidden = (el.dataset.model === 'atlas') !== useAlt;
+    });
+    if(A0.alt){
+      // its own group, at the end of the rotation-mode row and offset from it
+      const modeRow = document.querySelector('.panel.ctrl .row');
+      if(modeRow && !document.getElementById('modelrow')){
+        const row = document.createElement('span');
+        row.id = 'modelrow';
+        row.style.cssText = 'display:inline-flex;gap:8px;align-items:center;margin-left:18px';
+        row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Shape model');
+        for(const [label, alt] of [[A0.alt.label || 'TESS + ATLAS', true], ['TESS only', false]]){
+          const btn = document.createElement('button');
+          btn.className = 'btn'; btn.textContent = label;
+          btn.setAttribute('aria-pressed', alt === useAlt ? 'true' : 'false');
+          btn.addEventListener('click', ()=>{
+            if(alt === useAlt) return;
+            const u = new URL(location.href);
+            if(alt) u.searchParams.delete('model'); else u.searchParams.set('model', 'tess');
+            location.href = u.toString();
+          });
+          row.appendChild(btn);
+        }
+        modeRow.appendChild(row);
+      }
+    }
+  }catch(e){ /* never break the page over the toggle */ }
+  if(!useAlt) return A0;
+  return Object.assign({}, A0, {shape: A0.alt.shape, lc: A0.alt.lc, D: Object.assign({}, A0.D, A0.alt.D)});
+}
 async function boot(){
-  const A = window.AST;
+  const A = modelChoice(window.AST);
   const [sh, lc] = await Promise.all([
     fetch(A.shape).then(r=>r.json()),
     A.has_lc ? fetch(A.lc).then(r=>r.json()).catch(()=>null) : Promise.resolve(null)
@@ -125,6 +161,91 @@ function qMat(q){const [w,x,y,z]=q;return [
 
 let orient = qAxis([1,0,0],-1.2), zoom=1, phase=0, spinning=false;
 const scale = (()=>{let m=0;for(const v of D.verts)m=Math.max(m,Math.hypot(v[0],v[1],v[2]));return m||1;})();
+
+// ---- km scale. convexinv shapes are in arbitrary units, so km per unit comes from the catalogue
+// diameter, taken as the diameter of the sphere with the mesh's volume (the scaling used against
+// occultation chords). Read from AST.diam_km when the page carries it, else from the info panel's
+// Diameter row; with no diameter there is no bar.
+const kmPerUnit = (()=>{
+  let dk = (window.AST && +window.AST.diam_km) || 0;
+  if(!(dk > 0)){
+    for(const row of document.querySelectorAll('.stat-row')){
+      const l = row.querySelector('.stat-label'), v = row.querySelector('.stat-value');
+      if(l && v && l.textContent.trim().toLowerCase() === 'diameter'){
+        const m = v.textContent.match(/([0-9.]+)\s*km/); if(m) dk = parseFloat(m[1]);
+      }
+    }
+  }
+  if(!(dk > 0)) return null;
+  // volume as a sum of tetrahedra from the vertex centroid, which lies inside a convex hull, so
+  // every term is positive whatever the facet winding
+  const c = [0,0,0]; for(const v of D.verts){ c[0]+=v[0]; c[1]+=v[1]; c[2]+=v[2]; }
+  c[0]/=D.verts.length; c[1]/=D.verts.length; c[2]/=D.verts.length;
+  let V = 0;
+  for(const f of D.facets){
+    const a = D.verts[f[0]].map((x,i)=>x-c[i]);
+    for(let k=1;k<f.length-1;k++){
+      const b = D.verts[f[k]].map((x,i)=>x-c[i]), d = D.verts[f[k+1]].map((x,i)=>x-c[i]);
+      V += Math.abs(a[0]*(b[1]*d[2]-b[2]*d[1]) - a[1]*(b[0]*d[2]-b[2]*d[0]) + a[2]*(b[0]*d[1]-b[1]*d[0])) / 6;
+    }
+  }
+  return V > 0 ? dk / (2*Math.cbrt(3*V/(4*Math.PI))) : null;
+})();
+
+// Extent bars, fixed: horizontal = the body's maximum width across the spin axis (largest
+// vertex-to-vertex distance projected on the equatorial plane, the widest it appears while it
+// spins), vertical = its height along the spin axis (body z, unchanged by spin). Centred on the
+// body, horizontal beneath and vertical to the right (the panels sit on the left), just outside
+// the circle the body sweeps in any orientation.
+const extW = (()=>{
+  let m = 0;
+  for(let i=0;i<D.verts.length;i++) for(let j=i+1;j<D.verts.length;j++){
+    const a=D.verts[i], b=D.verts[j];
+    m = Math.max(m, Math.hypot(a[0]-b[0], a[1]-b[1]));
+  }
+  return m;
+})();
+const extH = (()=>{
+  let lo=Infinity, hi=-Infinity;
+  for(const v of D.verts){ lo=Math.min(lo,v[2]); hi=Math.max(hi,v[2]); }
+  return hi-lo;
+})();
+function fmtKm(km){
+  return km >= 1 ? `${+km.toPrecision(3)} km` : `${+(km*1000).toPrecision(3)} m`;
+}
+function drawExtentBars(S, cy0, w, h, panelH){
+  if(!kmPerUnit || !(extW > 0) || !(extH > 0)) return;
+  // Each bar tracks the body until it reaches its length at the default zoom, then holds that
+  // length while its label falls to the distance it now spans: zooming out it shrinks with the body
+  // and reads the full width / height, zooming in it stays readable instead of running off screen.
+  const S1 = S / zoom;
+  // Positions are anchored where the bars sit at the default zoom (cy0 = the body centre at zoom 1),
+  // so they stay put on the page as the view zooms; the body centre itself drifts with zoom.
+  const hw = Math.min(extW*S, extW*S1)/2, hh = Math.min(extH*S, extH*S1)/2, tick = 5, gap = 16;
+  const col = (getComputedStyle(document.body).getPropertyValue('--text-dim') || '').trim() || '#9aa3b2';
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1.2;
+  ctx.font = '12px "IBM Plex Mono", ui-monospace, monospace';
+  // horizontal: maximum width, beneath the body, kept above the control panel
+  const yb = Math.min(cy0 + scale*S1 + gap, h - panelH - 24);
+  ctx.beginPath();
+  ctx.moveTo(w/2-hw, yb); ctx.lineTo(w/2+hw, yb);
+  ctx.moveTo(w/2-hw, yb-tick); ctx.lineTo(w/2-hw, yb+tick);
+  ctx.moveTo(w/2+hw, yb-tick); ctx.lineTo(w/2+hw, yb+tick);
+  ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(fmtKm(2*hw/S*kmPerUnit), w/2, yb + 7);
+  // vertical: height along the spin axis, to the right of the body, kept inside the canvas
+  const xb = Math.min(w/2 + scale*S1 + gap, w - 70);
+  ctx.beginPath();
+  ctx.moveTo(xb, cy0-hh); ctx.lineTo(xb, cy0+hh);
+  ctx.moveTo(xb-tick, cy0-hh); ctx.lineTo(xb+tick, cy0-hh);
+  ctx.moveTo(xb-tick, cy0+hh); ctx.lineTo(xb+tick, cy0+hh);
+  ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(fmtKm(2*hh/S*kmPerUnit), xb + 8, cy0);
+  ctx.restore();
+}
 
 function draw(){
   const w=cv.width/dpr, h=cv.height/dpr;
@@ -211,6 +332,9 @@ function draw(){
     ctx.stroke();
     ctx.restore();
   }
+  // the body centre at the default zoom, where the scale bars are anchored
+  const cy0 = topOff > 0 ? cy : Math.max(S/zoom*0.9, (h - panelH)/2);
+  drawExtentBars(S, cy0, w, h, panelH);
   drawLC();
 }
 
