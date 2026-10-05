@@ -63,7 +63,8 @@ sys.path.insert(0, HERE)
 import batch_shapes as bs  # noqa: E402
 
 SSCAT = os.environ.get("SSCAT_DIR", "/fred/oz335/TESSdata/mpc/atlas")
-GAIA_DIR = os.environ.get("GAIA_DIR")   # optional: gaia_sso_<number>.ecsv (gaiadr3.sso_observation rows)
+GAIA_DIR = os.environ.get("GAIA_DIR", "/fred/oz335/TESSdata/mpc/gaia")   # Gaia DR3 transits + geometry (gaia_rows);
+                                                                          # objects without them are fitted without Gaia
 LCDIR = os.environ.get("LCDIR", "/fred/oz335/rridden/asteroids/clean_lightcurves")
 B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 START_POLES = [(0, 60), (90, 60), (180, 60), (270, 60), (45, 0), (135, 0), (225, 0), (315, 0),
@@ -183,48 +184,31 @@ def with_geometry(df, sv, ev):
 
 
 def gaia_rows(desig):
-    """Gaia DR3 epoch photometry with asteroid-centric ecliptic Sun and Gaia vectors, light-time
-    corrected epochs (MJD_lc), R, delta, phase angle and per-point G error. The asteroid's
-    barycentric state comes from JPL Horizons at each Gaia epoch (cached next to the data);
-    position at emission time r(t - tau) = r(t) - v tau, tau = |r - r_Gaia| / c."""
+    """Gaia DR3 transits of a numbered asteroid with their viewing geometry, from GAIA_DIR:
+      gaia_dr3_sso/bucket_XXX.parquet       one row per transit (convert_gaia_sso_to_parquet.py: the
+                                            8-9 CCD rows of a transit share one G magnitude)
+      gaia_dr3_geometry/bucket_XXX.parquet  asteroid-centric ecliptic Sun and Gaia vectors, R, delta,
+                                            phase angle, light-time-corrected epoch (gaia_transit_geometry.py:
+                                            ASSIST orbits, within 300 km / 0.2 arcsec of JPL Horizons)
+    bucket = number % 256. Returns None when the object has no Gaia data."""
     m = re.match(r"^\((\d+)\)", desig)
-    if GAIA_DIR is None or m is None or not os.path.exists(f"{GAIA_DIR}/gaia_sso_{m.group(1)}.ecsv"):
+    if GAIA_DIR is None or m is None:
         return None
-    from astropy.table import Table
-    from astropy.time import Time
-    from astropy.coordinates import get_body_barycentric
-    n = m.group(1)
-    t = Table.read(f"{GAIA_DIR}/gaia_sso_{n}.ecsv").to_pandas()
-    # one row per CCD, but G photometry is per transit (identical across a transit's 8-9 CCDs,
-    # all within 40 s): collapse to one point per transit so it is not counted ~9 times
-    t = (t.groupby("transit_id").agg(epoch_utc=("epoch_utc", "mean"), g_mag=("g_mag", "first"),
-                                     g_flux=("g_flux", "first"), g_flux_error=("g_flux_error", "first"),
-                                     x_gaia=("x_gaia", "mean"), y_gaia=("y_gaia", "mean"), z_gaia=("z_gaia", "mean"))
-         .reset_index())
-    t = t[np.isfinite(t.g_mag) & (t.g_flux > 0) & (t.g_flux_error > 0)].reset_index(drop=True)
-    jd_utc = t.epoch_utc.values + (2455197.5 if t.epoch_utc.max() < 1e6 else 0.0)   # DR3: JD - 2455197.5
-    cache = f"{GAIA_DIR}/gaia_horizons_{n}.npz"
-    if os.path.exists(cache) and len(np.load(cache)["jd_utc"]) == len(jd_utc):
-        st = np.load(cache)["state"]
-    else:
-        from astroquery.jplhorizons import Horizons
-        tdb = Time(jd_utc, format="jd", scale="utc").tdb.jd
-        st = []
-        for i in range(0, len(tdb), 50):
-            v = Horizons(id=f"{n};", location="@0", epochs=list(tdb[i:i + 50])).vectors(refplane="earth")
-            st.append(np.column_stack([np.asarray(v[c], dtype=float) for c in ("x", "y", "z", "vx", "vy", "vz")]))
-        st = np.vstack(st)
-        np.savez(cache, jd_utc=jd_utc, state=st)
-    gaia = t[["x_gaia", "y_gaia", "z_gaia"]].values
-    tau = np.linalg.norm(st[:, :3] - gaia, axis=1) / bs.C_AU_PER_DAY
-    ast = st[:, :3] - st[:, 3:] * tau[:, None]
-    sun = get_body_barycentric("sun", Time(jd_utc - tau, format="jd", scale="utc")).xyz.to("au").value.T
-    sv, ev = (sun - ast) @ bs._ICRS_TO_ECL.T, (gaia - ast) @ bs._ICRS_TO_ECL.T
-    R_, D_ = np.linalg.norm(sv, axis=1), np.linalg.norm(ev, axis=1)
-    df = pd.DataFrame(dict(src="gaia", filt="G", m=t.g_mag.values, dm=2.5 / np.log(10) * t.g_flux_error / t.g_flux,
-                           R=R_, delta=D_, SOE=np.degrees(np.arccos(np.clip(np.sum(sv * ev, 1) / (R_ * D_), -1, 1))),
-                           MJD_lc=jd_utc - tau - 2400000.5))
-    return with_geometry(df, sv, ev)
+    n = int(m.group(1))
+    pt = f"{GAIA_DIR}/gaia_dr3_sso/bucket_{n % 256:03d}.parquet"
+    pg = f"{GAIA_DIR}/gaia_dr3_geometry/bucket_{n % 256:03d}.parquet"
+    if not (os.path.exists(pt) and os.path.exists(pg)):
+        return None
+    tr = pd.read_parquet(pt, filters=[("number_mp", "==", n)])
+    geo = pd.read_parquet(pg, filters=[("number_mp", "==", n)])
+    d = tr.merge(geo, on=["number_mp", "transit_id"])
+    d = d[np.isfinite(d.g_mag) & (d.g_flux > 0) & (d.g_flux_error > 0)].reset_index(drop=True)
+    if not len(d):
+        return None
+    df = pd.DataFrame(dict(src="gaia", filt="G", m=d.g_mag.values,
+                           dm=2.5 / np.log(10) * d.g_flux_error.values / d.g_flux.values,
+                           R=d.R.values, delta=d.delta.values, SOE=d.SOE.values, MJD_lc=d.MJD_lc.values))
+    return with_geometry(df, d[["sx", "sy", "sz"]].values, d[["ex", "ey", "ez"]].values)
 
 
 def tess_points(df, sv, ev):
