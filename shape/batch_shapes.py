@@ -40,6 +40,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # binaries from the fork CheerfulUser/DAMIT-convex (`make` in its top directory builds both);
 # DAMIT_CONVEX is the clone, defaulting to shape/DAMIT-convex (the symlink layout used on ozstar)
 DAMIT_CONVEX = os.environ.get('DAMIT_CONVEX', os.path.join(HERE, 'DAMIT-convex'))
+# The fork's convexinv calls BLAS; one convexinv per worker, so keep each to a single thread (OpenBLAS
+# otherwise starts one per core and oversubscribes the node). Inherited by every convexinv subprocess.
+for _v in ('OPENBLAS_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS', 'OMP_NUM_THREADS'):
+    os.environ.setdefault(_v, '1')
 CONVEXINV = os.path.join(DAMIT_CONVEX, 'convexinv/convexinv')
 MINKOWSKI = os.path.join(DAMIT_CONVEX, 'minkowski')
 POINTS_MAX = int(os.environ.get('CI_POINTS_MAX', 3000))
