@@ -41,10 +41,14 @@ import json
 import multiprocessing as mp
 import os
 
-# Forked pool workers on ozstar came up bound to a single core (all 16 on CPU 4 while the parent held
-# 2-13,22-25), so the iterative mode ran serially. Keep the OpenMP runtime from binding, and reset each
-# worker's affinity to the parent's set (pole_step) in case anything else does.
-os.environ.setdefault("KMP_AFFINITY", "disabled")
+# Forked pool workers on ozstar came up bound to ONE core (conda numpy's MKL / Intel OpenMP runtime
+# pins each forked process): 8 workers ran at 1.0x, all on core 24. Measured on a compute node
+# (kmp_test, 8 workers): MKL_THREADING_LAYER=SEQUENTIAL 8.1x, KMP_AFFINITY=none 7.6x, while
+# KMP_AFFINITY=disabled makes the runtime assert (kmp_affinity.cpp 4314) and the workers hang.
+# Workers are single-threaded, so take MKL off OpenMP altogether, with 'none' as a backstop.
+# pole_step / joint_step still reset each worker's affinity to the parent's set.
+os.environ.setdefault("MKL_THREADING_LAYER", "SEQUENTIAL")
+os.environ.setdefault("KMP_AFFINITY", "none")
 os.environ.setdefault("OMP_PROC_BIND", "false")
 import re
 import subprocess
