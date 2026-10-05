@@ -224,23 +224,28 @@ def gaia_rows(desig):
 
 
 def tess_points(df, sv, ev):
-    """Every TESS point, light-time corrected (convexinv requires it), tagged with its session."""
+    """Every TESS point, light-time corrected (convexinv requires it), tagged with its session,
+    with its relative photometric error e_flux / flux (NaN when the lightcurve has none)."""
     t_lt = bs.lt_jd(df, ev) - 2400000.5
-    return [(int(k), t_lt[i], df.rel_flux.values[i], sv[i], ev[i])
+    rel_err = (df.e_flux / df.flux).abs().values if "e_flux" in df else np.full(len(df), np.nan)
+    return [(int(k), t_lt[i], df.rel_flux.values[i], sv[i], ev[i], rel_err[i])
             for k, idx in enumerate(bs.session_blocks(df)) for i in idx]
 
 
 def write_lcs(path, tess_rows, n_sessions, atlas, sv_a, ev_a, w_tess=None, w_sparse=None):
-    """Weighted format of the fork's convexinv (CheerfulUser/DAMIT-convex): w_tess goes in
-    each TESS header (third number); w_sparse, one weight per ATLAS/Gaia row, as a ninth column
-    flagged by a fourth header number. None writes the plain format. Sparse rows are split into
-    blocks by source (ATLAS, Gaia), each calibrated and reduced to 1 au."""
+    """Weighted format of the fork's convexinv (CheerfulUser/DAMIT-convex): w_tess, one weight per
+    TESS row, and w_sparse, one per ATLAS/Gaia row, are written as a ninth column flagged by a
+    fourth header number. None writes the plain format. Sparse rows are split into blocks by source
+    (ATLAS, Gaia), each calibrated and reduced to 1 au."""
     blocks = []
+    wt = None if w_tess is None else np.asarray(w_tess, float)
     for k in range(n_sessions):
-        pts = [(r[1], r[2], r[3], r[4], None) for r in tess_rows if r[0] == k]
+        pts = [(r[1], r[2], r[3], r[4], None if wt is None else wt[j]) for j, r in enumerate(tess_rows) if r[0] == k]
         if len(pts) >= 5:
             blocks.append((0, pts))                          # relative
     n_tess_blocks, n_tess_written = len(blocks), sum(len(p) for _, p in blocks)
+    is_tess = [True] * n_tess_blocks       # a fifth header number tags the source (0 TESS, 1 sparse);
+                                           # convexinv reads only the first four
     flux = 10 ** (-0.4 * atlas.m_o.values)
     wsp = np.ones(len(atlas)) if w_sparse is None else np.asarray(w_sparse)
     src = atlas.src.values if "src" in atlas else np.array(["atlas"] * len(atlas))
@@ -256,14 +261,12 @@ def write_lcs(path, tess_rows, n_sessions, atlas, sv_a, ev_a, w_tess=None, w_spa
         pts = [(atlas.MJD_lc.values[i], flux[i], sv_a[i], ev_a[i], wsp[i] if w_sparse is not None else None)
                for i in idx]                                 # MJD_lc: light-time corrected
         blocks.append((flag, pts))
+        is_tess.append(False)
     with open(path, "w") as f:
         f.write(f"{len(blocks)}\n")
-        for flag, pts in blocks:
+        for (flag, pts), tess_blk in zip(blocks, is_tess):
             per_point = pts[0][4] is not None
-            if per_point:
-                f.write(f"{len(pts)} {flag} 1 1\n")
-            else:
-                f.write(f"{len(pts)} {flag}" + (f" {w_tess:.8g}" if (flag == 0 and w_tess is not None) else "") + "\n")
+            f.write(f"{len(pts)} {flag} 1 1 {0 if tess_blk else 1}\n" if per_point else f"{len(pts)} {flag}\n")
             for jd_mjd, fl, s, e, w in pts:
                 f.write(f"{jd_mjd + 2400000.5:.6f} {fl:.6e} {s[0]:.6f} {s[1]:.6f} {s[2]:.6f} "
                         f"{e[0]:.6f} {e[1]:.6f} {e[2]:.6f}" + (f" {w:.8g}" if per_point else "") + "\n")
@@ -361,35 +364,34 @@ def chi2_weighted(fit_path, lcs_path, par_path=None):
                 m = m * phase(al)
             r = o / o.mean() - m / m.mean() if flag == 0 else (o - m) / o.mean()
             tot += float(np.sum(wp * r ** 2)); wsum += float(np.sum(wp))
-            parts[0 if (flag == 0 and not pp) else 1].append(r)
+            is_tess = (int(h[4]) == 0) if len(h) > 4 else (flag == 0 and not pp)   # source tag, else old layout
+            parts[0 if is_tess else 1].append(r)
             i += n
     ms = {k: float(np.mean(np.concatenate(v) ** 2)) if v else np.nan for k, v in parts.items()}
     return tot / wsum, ms[0], ms[1]
 
 
-def dataset_weights(scheme, n_t, var_t, w_sparse_abs):
-    """Per-point weights: TESS uniform, sparse (ATLAS, Gaia) per point from w_sparse_abs =
-    1 / (sigma_i^2 + sigma_model^2) (photometric error plus each source's model-error floor), all
-    normalised to a mean of 1 per point so the balance against convexinv's convexity
-    regularisation is unchanged.
-      noise: TESS 1 / var_t, sparse as given (one noise model throughout, a proper chi^2)
-      equal: TESS and the sparse data carry the same total weight; within the sparse data the
-             points keep their relative 1 / sigma^2 weights
+def dataset_weights(scheme, w_tess_abs, w_sparse_abs):
+    """Per-point weights for TESS and the sparse data (ATLAS, Gaia), each given as
+    1 / (sigma_i^2 + sigma_model^2): the point's photometric error plus that dataset's model-error
+    floor, in relative flux. Normalised to a mean of 1 per point so the balance against convexinv's
+    convexity regularisation is unchanged.
+      noise: as given (one noise model throughout, a proper chi^2)
+      equal: TESS and the sparse data carry the same total weight; within each, the points keep
+             their relative weights
       scaled: halfway (geometrically) between the two: total sparse / total TESS = sigma_TESS /
-             sigma_sparse, sigma_sparse the effective per-point scatter 1 / sqrt(mean w_sparse_abs).
+             sigma_sparse, each sigma the effective per-point scatter 1 / sqrt(mean weight).
              Equal is a ratio of 1 and noise (sigma_TESS / sigma_sparse)^2; equal let Kalliope's
-             poor ATLAS (floor 0.12 mag, 2-3.5x the others) carry half the fit"""
-    w_s = np.asarray(w_sparse_abs, float)
-    if scheme == "noise":
-        w_t = 1 / var_t
-    elif scheme == "equal":
-        w_t = w_s.sum() / n_t
+             poor ATLAS (floor 0.12 mag, 2-3.5x the others) carry half the fit (tested: worse)"""
+    w_t, w_s = np.asarray(w_tess_abs, float), np.asarray(w_sparse_abs, float)
+    if scheme == "equal":
+        w_t = w_t * (w_s.sum() / w_t.sum())
     elif scheme == "scaled":
-        ratio = np.sqrt(var_t * np.mean(w_s))          # sigma_TESS / sigma_sparse
-        w_t = w_s.sum() / (n_t * ratio)
-    else:
+        ratio = np.sqrt(np.mean(w_s) / np.mean(w_t))   # sigma_TESS / sigma_sparse
+        w_t = w_t * (w_s.sum() / (w_t.sum() * ratio))
+    elif scheme != "noise":
         raise ValueError(scheme)
-    c = (n_t + len(w_s)) / (w_t * n_t + w_s.sum())
+    c = (len(w_t) + len(w_s)) / (w_t.sum() + w_s.sum())
     return w_t * c, w_s * c
 
 
@@ -671,14 +673,24 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                         rms_min = min(r[f"rms_{s_}"] for r in good)
                         floors[s_] = float(np.sqrt(max(rms_min ** 2 - np.median(sig2[m_]), 1e-6)))
                         w_abs[m_] = 1 / (k2 * (sig2[m_] + floors[s_] ** 2))
-                    w_t, w_s = dataset_weights(weights, n_t, var_t, w_abs)
+                    # TESS likewise per point, 1 / (sigma_i^2 + floor^2) with sigma_i = e_flux / flux and
+                    # the floor from the best TESS-only residual (mean squared relative residual)
+                    t_sig2 = np.array([r[5] for r in tess_atlas_rows[0]], float) ** 2
+                    if not np.isfinite(t_sig2).any():
+                        t_sig2 = np.zeros(len(t_sig2))            # no errors: uniform TESS weights
+                    t_sig2 = np.where(np.isfinite(t_sig2), t_sig2, np.nanmedian(t_sig2))
+                    floor_t = float(np.sqrt(max(var_t - np.median(t_sig2), 1e-12)))
+                    w_t, w_s = dataset_weights(weights, 1 / (t_sig2 + floor_t ** 2), w_abs)
                     lcs_w = f"{work}/lcs_weighted.txt"
                     write_lcs(lcs_w, *tess_atlas_rows, w_tess=w_t, w_sparse=w_s)
                     tot = {s_: float(w_s[m_].sum()) for s_, m_ in src_masks.items()}
-                    wmeta = dict(scheme=weights, w_tess=w_t, sigma_tess=float(np.sqrt(var_t)),
-                                 model_floor_mag=floors, total_weight={"tess": w_t * n_t, **tot},
-                                 median_point_weight={s_: float(np.median(w_s[m_])) for s_, m_ in src_masks.items()})
-                    print(f"  weights ({weights}): TESS {w_t:.3g}/point, total {w_t * n_t:.0f}; " +
+                    wmeta = dict(scheme=weights, sigma_tess=float(np.sqrt(var_t)), model_floor_tess=floor_t,
+                                 tess_median_rel_err=float(np.sqrt(np.median(t_sig2))),
+                                 model_floor_mag=floors, total_weight={"tess": float(w_t.sum()), **tot},
+                                 median_point_weight={"tess": float(np.median(w_t)),
+                                                      **{s_: float(np.median(w_s[m_])) for s_, m_ in src_masks.items()}})
+                    print(f"  weights ({weights}): TESS median {np.median(w_t):.3g}/point (range {w_t.min():.3g}-{w_t.max():.3g}), "
+                          f"total {w_t.sum():.0f}, floor {floor_t:.4f}, median error {np.sqrt(np.median(t_sig2)):.4f}; " +
                           "; ".join(f"{s_} median {wmeta['median_point_weight'][s_]:.3g}/point, total {tot[s_]:.0f}, "
                                     f"floor {floors[s_]:.4f} mag" for s_ in src_masks), flush=True)
                 by_k = {r["k"]: r for r in done}
