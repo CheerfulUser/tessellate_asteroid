@@ -63,6 +63,8 @@ sys.path.insert(0, HERE)
 import batch_shapes as bs  # noqa: E402
 
 SSCAT = os.environ.get("SSCAT_DIR", "/fred/oz335/TESSdata/mpc/atlas")
+SURVEY_DIR = os.environ.get("SURVEY_DIR", "/fred/oz335/TESSdata/mpc/mpc_obs")   # MPC survey photometry + geometry
+SURVEY_MIN_PTS = 10                               # a (station, band) block needs this many points to get its own offset
 GAIA_DIR = os.environ.get("GAIA_DIR", "/fred/oz335/TESSdata/mpc/gaia")   # Gaia DR3 transits + geometry (gaia_rows);
                                                                           # objects without them are fitted without Gaia
 LCDIR = os.environ.get("LCDIR", "/fred/oz335/rridden/asteroids/clean_lightcurves")
@@ -82,6 +84,17 @@ FINAL_GRID_ALIASES = 3                            # final dense period grid: +/-
 # with the stalled-damping exit). 50 fixed iterations left Loreley's fit 4% short of its minimum,
 # as large as the chi2 differences that decide between mirror poles; 1e-7 converges (287 iterations)
 STOP_COND = os.environ.get("CI_STOP_COND", "1e-7")
+# Pole ranking (TESS-only shapes and weighted fixed-pole fits over the Fibonacci grid and its refinements)
+# can stop earlier: only the best poles' fits are carried on, and the period grid, final and mirror fits
+# converge at STOP_COND. Profile (Elektra, 16 workers): warm-started ranking fits were 56% of 2.1 CPU-h.
+RANK_STOP = os.environ.get("ITER_RANK_STOP", STOP_COND)
+# weighted fits per pole on the coarse grid (the refinement levels use N_PERIOD_STARTS)
+COARSE_STARTS = int(os.environ.get("ITER_COARSE_STARTS", N_PERIOD_STARTS))
+# after ranking, the best CONVERGE_TOP poles (by ranking score, across all regions) are refitted from every
+# period start at STOP_COND before the period grid, so a loose or single-start ranking only has to keep the
+# right pole in the top few, not rank it first (0 = off). Loreley under RANK_STOP 1e-6 + 1 coarse start fell
+# into the 7.22474 h minimum (chi2 0.00070 vs 0.00058).
+CONVERGE_TOP = int(os.environ.get("ITER_CONVERGE_TOP", 0))
 MODEL_CHECK_TOL = 1e-4                            # max |ours - convexinv| on block-normalised TESS model
 
 
@@ -126,24 +139,27 @@ def prepare_atlas(df):
     The fit is nonlinear and multi-modal in d: from one start, the same 2994 Loreley rows gave
     rms 0.128 mag (d 15.8 deg) on ozstar and 0.089 mag (d 3.8 deg) locally, with different scipy.
     Every clipping pass therefore fits from 10 (d, k) starts and keeps the lowest cost.
-    df carries src ('atlas' / 'gaia'), filt ('c', 'o', 'G'), m, R, delta, SOE, dm (per-point error)."""
+    df carries src ('atlas' / 'gaia' / a survey '<station>_<band>'), filt ('c', 'o', 'G', or the survey key),
+    m, R, delta, SOE, dm (per-point error). Every filter other than ATLAS orange gets a free magnitude offset."""
     from scipy.optimize import least_squares
     df = df[np.isfinite(df.m) & np.isfinite(df.delta) & np.isfinite(df.R)].copy()
     df["m_red"] = df.m - 5 * np.log10(df.R * df.delta)
     keep = np.ones(len(df), bool)
     alpha, mr = df.SOE.values, df.m_red.values
-    is_c, is_g = (df.filt.values == "c"), (df.filt.values == "G")
-    srcs = [s_ for s_ in ("atlas", "gaia") if (df.src == s_).any()]
+    groups = ["c", "G"] + sorted(set(df.filt) - {"o", "c", "G"})     # offsets onto ATLAS orange
+    ind = np.column_stack([df.filt.values == g_ for g_ in groups]).astype(float)
+    srcs = [s_ for s_ in ("atlas", "gaia") if (df.src == s_).any()] + sorted(set(df.src) - {"atlas", "gaia"})
 
     def resid(p, sel):
-        H, d, k, A0, col, colg = p
-        return mr[sel] - (phase_model(alpha[sel], H, d, k, A0) + col * is_c[sel] + colg * is_g[sel])
+        H, d, k, A0 = p[:4]
+        return mr[sel] - (phase_model(alpha[sel], H, d, k, A0) + ind[sel] @ p[4:])
 
-    lo, hi = [-10, 0.1, -0.2, 0, -2, -3], [30, 50, 0.2, 5, 2, 3]
+    lo = [-10, 0.1, -0.2, 0, -2] + [-3] * (len(groups) - 1)
+    hi = [30, 50, 0.2, 5, 2] + [3] * (len(groups) - 1)
     rms_src = {}
     for _ in range(3):
-        fits = [least_squares(resid, [np.median(mr[keep]), d0, k0, 0.5, 0.3, 0.0], args=(keep,), bounds=(lo, hi))
-                for d0, k0 in PHASE_STARTS]
+        fits = [least_squares(resid, [np.median(mr[keep]), d0, k0, 0.5, 0.3] + [0.0] * (len(groups) - 1), args=(keep,),
+                              bounds=(lo, hi)) for d0, k0 in PHASE_STARTS]
         p = min(fits, key=lambda f: f.cost).x
         r = resid(p, np.ones(len(df), bool))
         new = np.zeros(len(df), bool)
@@ -154,12 +170,16 @@ def prepare_atlas(df):
         keep = new
     n_raw = {s_: int((df.src == s_).sum()) for s_ in srcs}
     df = df[keep].copy()
-    df["m_o"] = df.m_red - p[4] * (df.filt == "c") - p[5] * (df.filt == "G")   # all onto ATLAS orange
+    df["m_o"] = df.m_red - ind[keep] @ p[4:]                                    # all onto ATLAS orange
     info = dict(colour_c_minus_o=float(p[4]), n_raw=n_raw["atlas"], n_kept=int((df.src == "atlas").sum()),
                 phase_fit_rms=rms_src["atlas"], phase_d_deg=float(p[1]), phase_k=float(p[2]), phase_A0=float(p[3]))
     if "gaia" in srcs:
         info.update(colour_G_minus_o=float(p[5]), n_raw_gaia=n_raw["gaia"],
                     n_kept_gaia=int((df.src == "gaia").sum()), phase_fit_rms_gaia=rms_src["gaia"])
+    off = dict(zip(groups, p[4:]))
+    info["phase_fit_rms_by_src"] = rms_src
+    info["survey"] = {s_: dict(colour_minus_o=float(off[s_]), n_raw=n_raw[s_], n_kept=int((df.src == s_).sum()),
+                               phase_fit_rms=rms_src[s_]) for s_ in srcs if s_ not in ("atlas", "gaia")}
     return df, info
 
 
@@ -211,6 +231,33 @@ def gaia_rows(desig):
     return with_geometry(df, d[["sx", "sy", "sz"]].values, d[["ex", "ey", "ez"]].values)
 
 
+def survey_rows(desig):
+    """MPC survey photometry of a numbered asteroid with its viewing geometry, from
+    SURVEY_DIR/survey_phot_geometry/bucket_XXX.parquet (survey_phot_geometry.py; bucket = number % 256).
+    Each (station, band) with at least SURVEY_MIN_PTS points is its own source '<station>_<band>', with its own
+    offset, clipping and error floor. dm is the reported per-point error when the file has one, else 0 (the
+    block's error floor alone weights it). Returns None when the object has none."""
+    m = re.match(r"^\((\d+)\)", desig)
+    if SURVEY_DIR is None or m is None:
+        return None
+    n = int(m.group(1))
+    path = f"{SURVEY_DIR}/survey_phot_geometry/bucket_{n % 256:03d}.parquet"
+    if not os.path.exists(path):
+        return None
+    d = pd.read_parquet(path, filters=[("number", "==", n)])
+    d = d[np.isfinite(d.mag)].reset_index(drop=True)
+    key = (d.stn + "_" + d.band).values
+    counts = pd.Series(key).value_counts()
+    d = d[pd.Series(key).isin(counts[counts >= SURVEY_MIN_PTS].index).values].reset_index(drop=True)
+    if not len(d):
+        return None
+    key = (d.stn + "_" + d.band).values
+    dm = d.dm.fillna(0.0).values if "dm" in d else np.zeros(len(d))
+    df = pd.DataFrame(dict(src=key, filt=key, m=d.mag.values, dm=dm, R=d.R.values, delta=d.delta.values,
+                           SOE=d.SOE.values, MJD_lc=d.MJD_lc.values))
+    return with_geometry(df, d[["sx", "sy", "sz"]].values, d[["ex", "ey", "ez"]].values)
+
+
 def tess_points(df, sv, ev):
     """Every TESS point, light-time corrected (convexinv requires it), tagged with its session,
     with its relative photometric error e_flux / flux (NaN when the lightcurve has none)."""
@@ -242,7 +289,8 @@ def write_lcs(path, tess_rows, n_sessions, atlas, sv_a, ev_a, w_tess=None, w_spa
     # i.e. a free overall scale = a fitted colour offset, while their phase-angle and rotational
     # variation still constrain the fit. One block per source, never chunked (the fork's
     # convexinv has no per-lightcurve point limit, and a chunk would add a spurious free offset).
-    for s_, f_, flag in (("atlas", "o", 1), ("atlas", "c", 0), ("gaia", "G", 0)):
+    surveys = sorted(set(src) - {"atlas", "gaia"})
+    for s_, f_, flag in [("atlas", "o", 1), ("atlas", "c", 0), ("gaia", "G", 0)] + [(k_, k_, 0) for k_ in surveys]:
         idx = np.where((src == s_) & (filt == f_))[0]
         if len(idx) < 5:
             continue
@@ -288,7 +336,7 @@ def read_errors(path):
     return out
 
 
-def write_control(path, lam, bet, per, pole_free=True, phase_free=True):
+def write_control(path, lam, bet, per, pole_free=True, phase_free=True, stop=None):
     """phase_free only with calibrated data present; relative-only fits keep a, d, k fixed."""
     fp, fa = int(pole_free), int(phase_free)
     with open(path, "w") as f:
@@ -297,7 +345,7 @@ def write_control(path, lam, bet, per, pole_free=True, phase_free=True):
         f.write(f"{bs.HARM} {bs.HARM}\t\t\tdegree and order\n{bs.NROWS}\t\t\tnumber of rows\n")
         for line in [f"0.5\t\t{fa}\ta", f"0.1\t\t{fa}\td", f"-0.5\t\t{fa}\tk", "0.1\t\t0\tc"]:
             f.write(line + "\n")
-        f.write(f"{STOP_COND}\t\t\titeration stop condition\n")
+        f.write(f"{stop or STOP_COND}\t\t\titeration stop condition\n")
 
 
 def chi2_of(fit_path, lcs_path):
@@ -495,11 +543,12 @@ def atlas_scan(A, N, lam, bet, per_hr, jd0, phi0):
         i0 = np.floor(x).astype(int) % N_PHI
         f = x - np.floor(x)
         y = sw * (y_obs[None, :] - (mag[rows, i0] * (1 - f) + mag[rows, (i0 + 1) % N_PHI] * f))
-        r = y - (y @ Q) @ Q.T                             # weighted least squares, sqrt(w) scaled
-        rr = np.sqrt(np.sum(r ** 2, axis=1) / np.sum(sw ** 2))
+        # weighted least squares, sqrt(w) scaled: |r|^2 = |y|^2 - |y Q|^2 (Q orthonormal), so the
+        # residual matrix itself is formed only at the chunk's best period
+        rr = np.sqrt(np.maximum(np.einsum("ij,ij->i", y, y) - np.sum((y @ Q) ** 2, axis=1), 0) / np.sum(sw ** 2))
         j = int(np.argmin(rr))
         if rr[j] < best[0]:
-            best = (rr[j], r[j] / sw)                     # unscaled residuals at the best period
+            best = (rr[j], (y[j] - (y[j] @ Q) @ Q.T) / sw)    # unscaled residuals at the best period
         rms.append(rr)
     rms = np.concatenate(rms)
     i = int(np.argmin(rms))
@@ -526,7 +575,7 @@ def pole_step(job):
     if hasattr(os, "sched_setaffinity"):
         os.sched_setaffinity(0, c["cpus"])
     cp, sp, pp, fp = (f"{c['work']}/it{k}_{x}.txt" for x in "cspf")
-    write_control(cp, lam, bet, c["period_hr"], pole_free=False, phase_free=False)
+    write_control(cp, lam, bet, c["period_hr"], pole_free=False, phase_free=False, stop=RANK_STOP)
     res, why = bs.run_pole(cp, c["lcs_tess"], sp, pp, fp)
     out = dict(k=k, lam=lam, bet=bet, pid=os.getpid(),
                n_cpus_allowed=len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None)
@@ -557,7 +606,7 @@ def joint_step(job):
     best, tried, warm = None, [], coef_in
     for j, per0 in enumerate(starts):
         cp, sp, pp, fp, cf = (f"{c['work']}/jw{k}_{j}_{x}.txt" for x in ("c", "s", "p", "f", "coef"))
-        write_control(cp, lam, bet, per0, pole_free=False, phase_free=True)
+        write_control(cp, lam, bet, per0, pole_free=False, phase_free=True, stop=RANK_STOP if k < 100000 else None)
         res, why = run_ci(cp, lcs_w, sp, pp, fp, (["-i", warm] if warm else []) + ["-c", cf])
         if res is None:
             continue
@@ -603,10 +652,11 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     du_alias = P0 / np.ptp(t_all)
     alpha = atlas.SOE.values
     src = atlas.src.values
-    src_masks = {s_: (src == s_) for s_ in ("atlas", "gaia") if (src == s_).any()}
+    src_masks = {s_: (src == s_) for s_ in ["atlas", "gaia"] + sorted(set(src) - {"atlas", "gaia"}) if (src == s_).any()}
     cols = [np.ones_like(alpha), alpha, np.exp(-alpha / info["phase_d_deg"])]
-    if "gaia" in src_masks:
-        cols.append(src_masks["gaia"].astype(float))   # free Gaia zero-point in every period's fit
+    for s_ in src_masks:
+        if s_ != "atlas":
+            cols.append(src_masks[s_].astype(float))   # free Gaia / survey zero-point in every period's fit
     is_cyan = (atlas.filt.values == "c") if "filt" in atlas else np.zeros(len(atlas), bool)
     if is_cyan.sum() >= 5:
         cols.append(is_cyan.astype(float))            # free ATLAS cyan offset, as in the weighted fits
@@ -615,7 +665,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     sig2 = atlas.dm.values ** 2
     w0 = np.empty(len(atlas))
     for s_, m_ in src_masks.items():
-        rms_ph = info["phase_fit_rms"] if s_ == "atlas" else info["phase_fit_rms_gaia"]
+        rms_ph = info["phase_fit_rms_by_src"][s_]
         w0[m_] = 1 / (sig2[m_] + max(rms_ph ** 2 - np.median(sig2[m_]), 1e-6))
     w0 /= w0.mean()
     sw = np.sqrt(w0)
@@ -682,7 +732,8 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                           "; ".join(f"{s_} median {wmeta['median_point_weight'][s_]:.3g}/point, total {tot[s_]:.0f}, "
                                     f"floor {floors[s_]:.4f} mag" for s_ in src_masks), flush=True)
                 by_k = {r["k"]: r for r in done}
-                jobs_w = [(r["k"], r["lam"], r["bet"], r["period_starts_hr"] or [r["period_atlas_hr"]], lcs_w)
+                n_starts = COARSE_STARTS if level == 0 else N_PERIOD_STARTS
+                jobs_w = [(r["k"], r["lam"], r["bet"], (r["period_starts_hr"] or [r["period_atlas_hr"]])[:n_starts], lcs_w)
                           for r in new if "error" not in r]
                 for jr in pool.imap_unordered(joint_step, jobs_w):
                     by_k[jr["k"]].update(jr)
@@ -707,6 +758,19 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                      if min(sep_deg(p, (d["lam"], d["bet"])) for d in done) > r_deg / 2]
 
     ok = sorted((r for r in done if "error" not in r and "joint_error" not in r), key=score)
+    if weights and CONVERGE_TOP:
+        top = ok[:CONVERGE_TOP]
+        with mp.get_context("fork").Pool(ncpu) as pool:
+            res_c = pool.map(joint_step, [(r["k"] + 500000, r["lam"], r["bet"],
+                                           r["period_starts_hr"] or [r["period_atlas_hr"]], lcs_w) for r in top])
+        for r, jr in zip(top, res_c):
+            if "joint_error" in jr:
+                continue
+            r["chi2_w_ranking"] = r["chi2_w"]
+            r.update({kk: v for kk, v in jr.items() if kk != "k"})
+        ok = sorted(ok, key=score)
+        print(f"  converged top {len(top)}: best " + ", ".join(f"({r['lam']:.0f},{r['bet']:+.0f}) {score(r):.5f}"
+                                                            for r in ok[:3]), flush=True)
     if weights:
         # dense period grid (+/- FINAL_GRID_ALIASES alias steps, quarter-step spacing) around the
         # best period of the best pole in each of the top regions
@@ -786,7 +850,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                       f"({c2 / joint['chi2']:.3f} x the best)", flush=True)
 
     def mesh_of(shape):
-        mk = bs.minkowski(shape)
+        mk = bs.minkowski_py_mesh(shape) or bs.minkowski(shape)
         if mk is None:
             return None, None
         V, F = mk
@@ -835,6 +899,9 @@ def main():
     g = gaia_rows(a.designation)
     if g is not None:
         raw = pd.concat([raw, g], ignore_index=True)
+    sv_rows = survey_rows(a.designation)
+    if sv_rows is not None:
+        raw = pd.concat([raw, sv_rows], ignore_index=True)
     atlas, info = prepare_atlas(raw)
     atlas = atlas.reset_index(drop=True)
     sv_a, ev_a = atlas[["sx", "sy", "sz"]].values, atlas[["ex", "ey", "ez"]].values
