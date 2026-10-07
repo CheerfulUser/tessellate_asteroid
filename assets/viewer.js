@@ -50,7 +50,7 @@
 // rather than embedded: 73 KB per page x 16,000 objects exceeds the 1 GB GitHub
 // Pages limit. Everything below the fetch is unchanged from the single-page viewer.
 let D;
-// Model choice for objects that also have a TESS + ATLAS (+ Gaia) fit (AST.alt): that model is the
+// Model choice for objects that also have a joint TESS + catalog fit (AST.alt): that model is the
 // default, and ?model=tess shows the TESS-only catalogue model. Switching reloads the page with the
 // other parameter rather than rebuilding in place, so no event handler is ever bound twice.
 function modelChoice(A0){
@@ -67,7 +67,7 @@ function modelChoice(A0){
         row.id = 'modelrow';
         row.style.cssText = 'display:inline-flex;gap:8px;align-items:center;margin-left:18px';
         row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Shape model');
-        for(const [label, alt] of [[A0.alt.label || 'TESS + ATLAS', true], ['TESS only', false]]){
+        for(const [label, alt] of [[A0.alt.label || 'TESS + catalog', true], ['TESS only', false]]){
           const btn = document.createElement('button');
           btn.className = 'btn'; btn.textContent = label;
           btn.setAttribute('aria-pressed', alt === useAlt ? 'true' : 'false');

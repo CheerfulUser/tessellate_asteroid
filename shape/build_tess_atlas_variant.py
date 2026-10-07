@@ -1,22 +1,24 @@
-"""Add a TESS + ATLAS (+ Gaia) model to an object's page, shown by default with a toggle back to the
-TESS-only catalogue model (assets/viewer.js; ?model=tess selects TESS only).
+"""Add a joint TESS + sparse-catalogue model (combined_tess_atlas.py: ATLAS, Gaia and the MPC survey photometry
+of Pan-STARRS, ZTF, Mt. Lemmon and Catalina) to an object's page, shown by default with a toggle back to the
+TESS-only catalogue model (assets/viewer.js; ?model=tess selects TESS only). The toggle reads "TESS + catalog";
+the solution block lists the sources and point counts that went into the fit (--fit, the fit's JSON).
 
 Input per object: a combined_tess_atlas.py fit -- its convexinv shape, parameters, model lightcurve
 and -e uncertainties (prefix PREFIX in the work directory) -- and the object's TESS lightcurve.
 Writes
-  data/shapes/<key>_tessatlas.json        the mesh (DAMIT minkowski), same format as the catalogue
+  data/shapes/<key>_tessatlas.json        the mesh (minkowski_py, DAMIT minkowski as fallback), same format as the catalogue
   data/lightcurves/<key>_tessatlas.json   TESS folded on the fit's own period and rotation
                                           zero-point, binned like batch_shapes.py, with the fit's
                                           model rescaled per session to its data
 and patches asteroid/<key>.html: window.AST.alt (shape, lightcurve, camera for the fitted pole, facet
-arrays) and a "TESS + ATLAS + Gaia solution" stats block beside the catalogue one.
+arrays) and a "TESS + catalog solution" stats block beside the catalogue one.
 
 The camera reproduces make_cameras.py's derivation (same frame and signed aspect) for the fitted
 pole; the fold uses phi(t) = phi0 + 2 pi (t_lt - t0) / P with light-time-corrected epochs, the
 convention the viewer's spin sync was validated against (validate_viewer_sync.py).
 
 Usage: python shape/build_tess_atlas_variant.py <key> <work_dir> <clean_lc_csv> [--prefix opt_plain]
-       [--label "..."]
+       [--label "..."] [--fit <combined fit JSON>]
 """
 import argparse
 import hashlib
@@ -36,6 +38,25 @@ from build_pages import stat, POLE_LABEL  # noqa: E402
 
 NB = bs.NB
 COORD_DP = 4
+# MPC station codes of the survey photometry blocks ('<station>_<band>' sources in the fit)
+STATION_NAMES = {"F51": "Pan-STARRS", "F52": "Pan-STARRS", "I41": "ZTF", "G96": "Mt. Lemmon", "703": "Catalina"}
+
+
+def data_line(n_tess, fit_json):
+    """"TESS n + ATLAS n + Gaia n + ZTF n + ..." from the fit's ATLAS info (points kept after clipping);
+    surveys summed over their bands and stations."""
+    if not fit_json:
+        return f"TESS {n_tess:,} pts + sparse ATLAS / Gaia"
+    info = json.load(open(fit_json))["atlas"]
+    parts = [f"TESS {n_tess:,}", f"ATLAS {info['n_kept']:,}"]
+    if info.get("n_kept_gaia"):
+        parts.append(f"Gaia {info['n_kept_gaia']:,}")
+    surveys = {}
+    for src, v in (info.get("survey") or {}).items():
+        name = STATION_NAMES.get(src.split("_")[0], src.split("_")[0])
+        surveys[name] = surveys.get(name, 0) + int(v["n_kept"])
+    parts += [f"{k} {n:,}" for k, n in surveys.items()]
+    return " + ".join(parts) + " pts"
 
 
 def mat2quat(R):
@@ -82,7 +103,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("key"); ap.add_argument("work"); ap.add_argument("lc_csv")
     ap.add_argument("--prefix", default="opt_plain")
-    ap.add_argument("--label", default="TESS + ATLAS + Gaia")
+    ap.add_argument("--label", default="TESS + catalog")
+    ap.add_argument("--fit", default=None, help="the combined fit's JSON, for the sources and point counts")
     a = ap.parse_args()
     w = f"{a.work}/{a.prefix}"
     tok = open(f"{w}_p.txt").read().split()
@@ -94,7 +116,7 @@ def main():
     lam, bet, per_hr = err["lambda_deg"][0], err["beta_deg"][0], err["period_hr"][0]   # full precision
 
     # mesh
-    V, F = bs.minkowski(f"{w}_s.txt")
+    V, F = bs.minkowski_py_mesh(f"{w}_s.txt") or bs.minkowski(f"{w}_s.txt")
     # Calibrated ATLAS data fix convexinv's absolute size scale, so these meshes come out ~0.03
     # units across against ~1 for the relative-only catalogue fits; rounded to COORD_DP decimals that
     # merged vertices (508 of Elektra's 540 left distinct). Normalise to unit maximum radius like the
@@ -169,7 +191,7 @@ def main():
         stat("Amplitude", f"{amp:.3f} mag"),
         stat("Equatorial ratio", f"{wmax / wmin:.2f}"),
         stat("Polar / equatorial", f"{np.ptp(V[:, 2]) / wmin:.2f}"),
-        stat("Data", f"TESS {len(order):,} pts + sparse ATLAS / Gaia"),
+        stat("Data", data_line(len(order), a.fit)),
         stat("Facets", nf),
         stat("Viewing aspect", f"{aspect:.0f}&deg; from the pole")])
     downloads = (f'<p class="sec">{a.label} downloads</p><div class="dl">'

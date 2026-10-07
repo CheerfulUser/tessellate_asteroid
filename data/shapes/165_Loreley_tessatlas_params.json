@@ -1,5 +1,5 @@
 {
- "model": "TESS + ATLAS + Gaia",
+ "model": "TESS + catalog",
  "pole_lambda_deg": 180.9614448491,
  "pole_lambda_err_deg": 0.273517,
  "pole_beta_deg": 28.3007702297,
