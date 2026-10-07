@@ -33,7 +33,7 @@ Usage:
     python batch_shapes.py --index 0 --total 200 --targets targets.csv --out shapes/
     python batch_shapes.py --designation "(75) Eurydike" --out shapes/
 """
-import argparse, json, os, re, subprocess, sys, time
+import argparse, json, os, re, subprocess, sys, time, zlib
 import numpy as np, pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -110,7 +110,19 @@ def folded_rms(df, model, period_hr, blocks, nb=NB):
     ok = cnt >= 3
     return float(np.sqrt(np.mean((mm2[ok] - dm[ok]) ** 2))) if ok.sum() else float('inf')
 T_INV = int(os.environ.get('T_INV', 900))
-T_MINK = int(os.environ.get('T_MINK', 300))
+# minkowski on the 39,431-object store run: median 4.9 s, 99th percentile 25 s; 281 objects hit a 30 s
+# timeout. minkowski_seconds is recorded per object.
+T_MINK = int(os.environ.get('T_MINK', 30))
+T_POLY = int(os.environ.get('T_POLY', 300))
+# The mesh comes from minkowski_py (a convex-optimisation Minkowski solver: ~1 s, reproduces the facet
+# areas 9-30x more closely than DAMIT's minkowski, and handles the (near-)zero facet areas that made
+# minkowski fail outright on 1,429 objects of the store run). DAMIT's minkowski is the fallback on the same
+# shape, then the next-best orientations (mesh_orientation_rank > 0 records that the published shape is not
+# the best fit), then polyhedrec.
+MESH_TRIES = int(os.environ.get('MESH_TRIES', 3))
+# validation sample: for this fraction of objects (fixed by a hash of the designation), DAMIT's minkowski also
+# meshes the adopted shape and the two meshes are compared (mesh_compare_* columns)
+MESH_COMPARE_FRAC = float(os.environ.get('MESH_COMPARE_FRAC', 0.02))
 
 
 def sn(d):
@@ -246,6 +258,47 @@ def minkowski(shape_path):
         return None
 
 
+_POLY_CODE = """
+import json, sys
+import numpy as np
+sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[1] + '/polyhedrec')
+from polyhedrec_fast import reconstruct_fast
+L = open(sys.argv[2]).read().split()
+n = int(L[0]); x = np.array(L[1:1 + 4 * n], dtype=float).reshape(n, 4)
+p = reconstruct_fast(x[:, 1:] / np.linalg.norm(x[:, 1:], axis=1)[:, None], x[:, 0])
+V = np.array(p.vertices, dtype=float)
+F = []
+for f in p.faces:
+    ids = list(f.vertices)
+    q = V[ids]
+    nrm = sum(np.cross(q[k], q[(k + 1) % len(ids)]) for k in range(len(ids)))
+    F.append(ids if np.dot(nrm, f.unormal) >= 0 else ids[::-1])
+print(json.dumps({'v': V.tolist(), 'f': F}))
+"""
+
+
+def polyhedrec_mesh(shape_path):
+    """Fallback reconstructor, in a subprocess so T_POLY can stop it (it ran 33 min on Deflotte and failed)."""
+    try:
+        r = subprocess.run([sys.executable, '-c', _POLY_CODE, HERE, shape_path], stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=T_POLY)
+        m = json.loads(r.stdout.decode())
+        V = np.array(m['v'])
+        F = [f for f in m['f'] if len(set(f)) >= 3]
+        return V - V.mean(axis=0), F
+    except Exception:
+        return None
+
+
+def minkowski_py_mesh(shape_path):
+    try:
+        import minkowski_py
+        V, F, info = minkowski_py.from_areas_file(shape_path)
+        return (V, F) if info['converged'] and info['max_area_error'] < 1e-3 else None
+    except Exception:
+        return None
+
+
 def caliper_widths(V):
     """Max and min width of the mesh perpendicular to the spin axis (z), over all directions."""
     ang = np.radians(np.arange(0.0, 180.0, 0.5))
@@ -328,14 +381,44 @@ def process(des, period_hr, lc_path, workdir, outdir):
                    pole_constrained=(None if FIX_POLE else bool(lam_std < 20)),
                    pole_fixed=FIX_POLE)
 
-        mk = minkowski(best['shape'])
+        # mesh: minkowski on the best orientation, then the next-best ones, then polyhedrec on the best
+        order = sorted(sols, key=lambda q: q.get('brms', 0.0))[:MESH_TRIES] if FIX_POLE else [best]
+        attempts = ([(0, order[0], 'minkowski_py'), (0, order[0], 'minkowski')]
+                    + [(rank, q, m_) for rank, q in enumerate(order) if rank for m_ in ('minkowski_py', 'minkowski')]
+                    + [(0, order[0], 'polyhedrec')])
+        mk, why = None, 'mesh reconstruction failed'
+        for rank, q, method in attempts:
+            _tm = time.time()
+            got = {'minkowski': minkowski, 'minkowski_py': minkowski_py_mesh, 'polyhedrec': polyhedrec_mesh}[method](q['shape'])
+            rec[f'{method}_seconds'] = round(rec.get(f'{method}_seconds', 0.0) + time.time() - _tm, 2)
+            if got is None:
+                continue
+            nbad = check_convex(*got)
+            if nbad:
+                why = f'{nbad} non-convex faces'
+                continue
+            mk, best = got, q
+            rec.update(mesh_method=method, mesh_orientation_rank=rank)
+            break
         if mk is None:
-            rec['error'] = 'mesh reconstruction failed'; return rec
+            rec['error'] = why; return rec
         V, F = mk
-        nbad = check_convex(V, F)
-        rec.update(n_verts=len(V), n_facets=len(F), nonconvex_faces=int(nbad))
-        if nbad:
-            rec['error'] = f'{nbad} non-convex faces'; return rec
+        if zlib.crc32(tag.encode()) % 10000 < MESH_COMPARE_FRAC * 10000:
+            _tm = time.time()
+            mm = minkowski(best['shape']) if rec['mesh_method'] != 'minkowski' else None
+            rec['mesh_compare_minkowski_seconds'] = round(time.time() - _tm, 2)
+            if mm is not None:
+                from scipy.spatial import ConvexHull, cKDTree
+                # both meshes centred; scaled to unit volume, since each reconstructor picks its own size
+                a_ = V / ConvexHull(V).volume ** (1 / 3)
+                b_ = mm[0] / ConvexHull(mm[0]).volume ** (1 / 3)
+                d = max(cKDTree(b_).query(a_)[0].max(), cKDTree(a_).query(b_)[0].max())
+                rec['mesh_compare_max_vertex_dist_rel'] = float(d / np.ptp(a_, axis=0).max())
+            else:
+                rec['mesh_compare_max_vertex_dist_rel'] = None
+        rec.update(n_verts=len(V), n_facets=len(F), nonconvex_faces=0,
+                   representative_lambda_deg=best['lam'], representative_beta_deg=best['bet'],
+                   model_period_hr=best['per'])
         # z is the spin axis, so only the EQUATORIAL ratio relates to lightcurve amplitude.
         # Sorting all three extents and calling the top two "a/b" reported the polar ratio for
         # elongated-along-z bodies -- it gave 1.54 for Link whose equatorial ratio is 1.08.
