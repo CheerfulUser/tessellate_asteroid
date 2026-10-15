@@ -136,6 +136,14 @@ S = dict(n=len(r), new=int(r.published_rot_per_hr.isna().sum()),
          shapes=int(r.key.isin(_shape_keys).sum()),
          noshape=int((~r.key.isin(_shape_keys)).sum()))
 
+# figure captions take their numbers from the figures' own statistics (make_population_figs.py writes
+# stats.json beside them), so a caption always describes the catalogue its figure was drawn from
+try:
+    S.update({f'pop_{k}': (int(v) if float(v).is_integer() else v)
+              for k, v in json.load(open(f'{FIGS}/stats.json')).items()})
+except FileNotFoundError:
+    pass
+
 import landing_text as TXT   # noqa: E402  (all page prose lives there)
 
 

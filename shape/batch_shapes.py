@@ -90,6 +90,22 @@ def perpendicular_poles(ev, n=POLE_SCAN):
     return out
 
 
+def point_rms(lcs_path, model):
+    """Per-point residual rms of a convexinv model (its -o output, one value per point in lcs order), each block's
+    model rescaled to that block's mean. Unlike folded_rms, independent of the period: every point counts once
+    whatever period is tested, so it can compare fits at different periods (P vs 2P); folded_rms bins in phase,
+    and at 2P each bin holds half the points, which biases it against the longer period."""
+    L = open(lcs_path).read().split("\n")
+    nb_, i, r, j = int(L[0].split()[0]), 1, [], 0
+    for _ in range(nb_):
+        n = int(L[i].split()[0]); i += 1
+        b = np.array([float(L[i + k].split()[1]) for k in range(n)]); i += n
+        mb = model[j:j + n]; j += n
+        r.append(b / b.mean() - mb / mb.mean())
+    r = np.concatenate(r)
+    return float(np.sqrt(np.mean(r ** 2)))
+
+
 def folded_rms(df, model, period_hr, blocks, nb=NB):
     """Model-minus-data rms on the folded, binned curve, after per-session rescaling.
 
@@ -366,6 +382,14 @@ def process(des, period_hr, lc_path, workdir, outdir):
                     sol['brms'] = folded_rms(df, np.loadtxt(sol['fit']), sol['per'], blocks)
                 except Exception:
                     sol['brms'] = float('inf')
+            for sol in sols:
+                try:
+                    sol['prms'] = point_rms(lcs, np.loadtxt(sol['fit']).ravel())
+                except Exception:
+                    sol['prms'] = float('inf')
+            _p = sorted(s_['prms'] for s_ in sols if np.isfinite(s_['prms']))
+            rec['point_rms_min'] = _p[0] if _p else None
+            rec['point_rms_median'] = float(np.median(_p)) if _p else None
             best = min(sols, key=lambda s: s['brms'])
             _f = sorted(s['brms'] for s in sols if np.isfinite(s['brms']))
             rec['orientation_rms_min'] = _f[0] if _f else None

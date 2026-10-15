@@ -72,7 +72,7 @@ MIN_SNR = STACK_SIG_TARGET
 MIN_POINTS_FOR_PLOT = 10
 MIN_POINTS_FOR_PERIODOGRAM = 30
 MIN_PERIOD_DAYS = 0.04       # ~1 hr
-MAX_PERIOD_DAYS = 10.0       # 240 hr -- widened from 48hr (see below). Draft "Asteroids in
+MAX_PERIOD_DAYS = float(_os.environ.get("ASTEROID_MAX_PERIOD_DAYS", 10.0))   # 240 hr default -- widened from 48hr (see below). Draft "Asteroids in
 # TESSELLATE" paper searches 20 min-200 hr for comparison.
 # NOTE: the 48hr cap was a holdover from single-sector (~27-day baseline) studies, where a
 # period anywhere near the baseline can't be meaningfully constrained anyway. This run spans
@@ -181,6 +181,20 @@ RELIABILITY_SCORE_MIN = 0.564  # v4 model. Chosen on a 600-object dev set and me
 # failure mode outright. They are applied in the reliability decision, not post hoc.
 RELIABILITY_MIN_POINTS_FLOOR = 100
 RELIABILITY_MIN_AOVF_FLOOR = 1.5
+# Rotation cannot take an asteroid's flux below zero: the binned phase fold (FOLD_N_BINS bins, the bottom panel
+# of the plots) must not go significantly negative, i.e. no bin may have mean + 1 sigma (its standard error) < 0.
+# User rule (2026-10-08) after the raw-frame store run passed objects with binned-fold amplitudes up to 11.8 mag.
+# The one exception is an object that moves less than STATIONARY_MAX_PX pixels in every visit, where the
+# difference image can subtract part of the asteroid itself. model_min_rel_flux (minimum of the 4-harmonic
+# Fourier model drawn in the fold panel) is recorded alongside, not gated on.
+FOLD_N_BINS = 15
+# A periodogram maximum at the edge of the search range is not a detection (power still rising): the objects pinned
+# at the old 240 h limit moved to 491-659 h when the range was widened. Peaks within EDGE_FRAC of MAX_PERIOD_DAYS
+# are flagged (period_at_search_edge) and never reliable. These two (fold, edge) are the only hard physical gates;
+# sampling, aliasing and noise are left to the classifier, which is retrained on labelled raw-mode examples.
+EDGE_FRAC = 0.02
+TESS_PIXEL_ARCSEC = 21.0
+STATIONARY_MAX_PX = 1.0
 # n_phase_coverings is still COMPUTED and reported (it is a useful diagnostic and the
 # corrected version of a statistic that was structurally broken below ~8hr), but it is NOT a
 # model feature: it can only be derived from a saved lightcurve, and only 6,092 of the 8,964
@@ -189,7 +203,7 @@ RELIABILITY_MIN_AOVF_FLOOR = 1.5
 # population, since clean_lightcurves/ was only ever written for objects passing an earlier
 # reliability cut. Training on the full overlap is worth far more than the +0.008 AUC the
 # feature contributed (validated: 0.9069 on the full overlap vs 0.8445 on the subset).
-CLASSIFIER_FEATURES = ['aov_F', 'amp_snr', 'max_phase_gap', 'n_cycles_observed', 'n_points',
+CLASSIFIER_FEATURES = ['fold_vn', 'aov_F', 'amp_snr', 'max_phase_gap', 'n_cycles_observed', 'n_points',
                         'loo_worst_chi2', 'power_ratio', 'fap', 'ls_power', 'naive_power',
                         'n_visits', 'n_sectors', 'baseline_hr', 'n_outliers_rejected',
                         'frac_points_stacked', 'phase_angle_range_deg', 'median_n_stack',
@@ -214,6 +228,13 @@ def get_reliability_model():
                   f"branch rule", flush=True)
             _reliability_bundle = None
     return _reliability_bundle
+
+
+def reliability_threshold():
+    """The deployed model's own threshold when its bundle carries one (round-1 classifier, trained on the user's
+    visual labels: 0.323), else RELIABILITY_SCORE_MIN (v4)."""
+    b = get_reliability_model()
+    return float(b.get("threshold", RELIABILITY_SCORE_MIN)) if b else RELIABILITY_SCORE_MIN
 
 
 def reliability_score(feats):
@@ -911,8 +932,89 @@ def branch_is_reliable(aov_F, amp_snr, max_phase_gap, n_cycles_observed, n_point
     return bool(branch_A_old or branch_A_new or branch_B or branch_D or branch_E or branch_F)
 
 
+# Period-independent outlier clipping BEFORE the periodogram: a point more than PRECLIP_SIGMA robust sigma from its
+# own visit's median (in units of its own error) is dropped. Outlier rejection otherwise only happens after a period
+# is chosen, at that period, so outliers can pick the period: (17628) 1996 FB5 had 98 such points in 4,052, and
+# the weighted 1-term periodogram on the raw points peaked at 14.9 h (power 0.0042, tied with 19.6 and 16.8 h);
+# after clipping the 1.462 h peak (power 0.021, 5x the next) gives the 2.924 h rotation the 2-term periodogram
+# showed. The rejection at the adopted period (reject_outliers) still runs afterwards.
+PRECLIP_SIGMA = 5.0
+
+
+def preclip_mask(track):
+    f, e = track["rel_flux"].to_numpy(float), track["rel_flux_err"].to_numpy(float)
+    ok = np.isfinite(f) & np.isfinite(e) & (e > 0)
+    dev = np.full(len(f), np.nan)
+    dev[ok] = (f[ok] - track.loc[ok, "rel_flux"].groupby(track.loc[ok, "visit"]).transform("median").to_numpy()) / e[ok]
+    d = dev[ok]
+    mad = 1.4826 * np.median(np.abs(d - np.median(d))) if ok.any() else np.nan
+    if not np.isfinite(mad) or mad <= 0:
+        return ok
+    return ok & (np.abs(np.nan_to_num(dev, nan=np.inf)) < PRECLIP_SIGMA * mad)
+
+
+# ---- Classifier features after Vavilov, Eggl & Greenstreet 2026 (arXiv 2610.07584) ------------------------------
+# Inputs to the reliability classifier only (no thresholds). Phase coverage: COV_WINDOW-wide windows slid across the
+# phase in COV_STEPS steps; a window is covered with >= COV_MIN_PTS points and confirmed when those points also span
+# more than half a period in time (two different rotations). The ceiling C_max(N) is the coverage N uniformly
+# spread points would reach, so coverage can be judged against sample size.
+COV_WINDOW, COV_STEPS, COV_MIN_PTS = 0.07, 100, 3
+RIVAL_MIN_FRAC = 0.5
+_HARMONIC_RATIOS = (0.5, 2.0, 1 / 3, 3.0)
+
+
+def phase_coverage_features(mjd, period_days):
+    nan = dict(phase_cov_lc=np.nan, phase_cov_grp=np.nan, phase_gap_longest=np.nan, phase_cov_ceiling=np.nan)
+    if len(mjd) < COV_MIN_PTS or not np.isfinite(period_days) or period_days <= 0:
+        return nan
+    ph = (mjd % period_days) / period_days
+    starts = np.arange(COV_STEPS) / COV_STEPS
+    rel = (ph[None, :] - starts[:, None]) % 1.0
+    inside = rel < COV_WINDOW
+    n_in = inside.sum(axis=1)
+    covered = n_in >= COV_MIN_PTS
+    t = np.where(inside, mjd[None, :], np.nan)
+    with np.errstate(all="ignore"):
+        span = np.nanmax(t, axis=1) - np.nanmin(t, axis=1)
+    confirmed = covered & (np.nan_to_num(span) > period_days / 2)
+    grid = (np.arange(1000) + 0.5) / 1000           # phase points covered by any covered window
+    g = ((grid[None, :] - starts[covered][:, None]) % 1.0 < COV_WINDOW).any(axis=0) if covered.any() else np.zeros(1000, bool)
+    if g.all():
+        longest = 0.0
+    elif not g.any():
+        longest = 1.0
+    else:                                            # longest run of uncovered grid points, with wraparound
+        r = np.roll(~g, -int(np.argmax(g)))
+        runs, cur = [], 0
+        for v in r:
+            cur = cur + 1 if v else 0
+            runs.append(cur)
+        longest = max(runs) / 1000
+    lam = COV_WINDOW * len(mjd)
+    return dict(phase_cov_lc=float(g.mean()), phase_cov_grp=float(confirmed.mean()), phase_gap_longest=float(longest),
+                phase_cov_ceiling=float(1 - np.exp(-lam) * (1 + lam + lam ** 2 / 2)))
+
+
+def rival_peak_features(freq, power):
+    """Distinct periodogram peaks with at least RIVAL_MIN_FRAC of the best peak's power, ignoring simple harmonics
+    (1/2, 2, 1/3, 3) of the best and points within one peak width of it."""
+    if freq is None or len(power) < 3:
+        return dict(n_rival_peaks=np.nan, best_rival_ratio=np.nan)
+    i = int(np.argmax(power)); fb, pb = freq[i], power[i]
+    loc = np.where((power[1:-1] >= power[:-2]) & (power[1:-1] >= power[2:]))[0] + 1
+    width = 3 * np.median(np.diff(freq)) * SAMPLES_PER_PEAK
+    rivals = [j for j in loc if abs(freq[j] - fb) > width
+              and all(abs(freq[j] / fb - r) > 0.02 * r for r in _HARMONIC_RATIOS)]
+    pr = np.array([power[j] for j in rivals])
+    return dict(n_rival_peaks=int((pr >= RIVAL_MIN_FRAC * pb).sum()),
+                best_rival_ratio=float(pr.max() / pb) if len(pr) else 0.0)
+
+
 def plot_asteroid(designation, track, outpath, h_mag=None, sbdb_entry=None):
     track = track.sort_values("mjd").reset_index(drop=True)
+    _pre = preclip_mask(track)
+    n_preclipped = int((~_pre).sum())
+    track = track[_pre].reset_index(drop=True)
     n = len(track)
     n_visits = track["visit"].nunique()
     n_sectors = track["sector"].nunique()
@@ -951,6 +1053,72 @@ def plot_asteroid(designation, track, outpath, h_mag=None, sbdb_entry=None):
                                                     clean_track["visit"].values)
         n_phase_coverings = n_phase_coverings_statistic(plot_mjd, period_days)
 
+    # minimum of the fitted lightcurve model (relative flux), and the largest motion within any visit (pixels)
+    vav = dict(phase_cov_lc=np.nan, phase_cov_grp=np.nan, phase_gap_longest=np.nan, phase_cov_ceiling=np.nan,
+               n_rival_peaks=np.nan, best_rival_ratio=np.nan, chi2_red_fourier=np.nan, amp_overshoot=np.nan)
+    if result is not None and len(plot_mjd) >= RELIABLE_MIN_POINTS:
+        vav.update(phase_coverage_features(plot_mjd, result["period2"]))
+        vav.update(rival_peak_features(result.get("freq1"), result.get("power1")))
+        A_v = _fourier_design((plot_mjd % result["period2"]) / result["period2"], DISAMBIGUATION_N_HARM)
+        c_v, *_ = np.linalg.lstsq(A_v / plot_ferr[:, None], plot_flux / plot_ferr, rcond=None)
+        nu = len(plot_flux) - A_v.shape[1]
+        if nu > 0:
+            vav["chi2_red_fourier"] = float(np.sum(((plot_flux - A_v @ c_v) / plot_ferr) ** 2) / nu)
+        m_v = _fourier_design(np.linspace(0, 1, 300), DISAMBIGUATION_N_HARM) @ c_v
+        rng_v = np.percentile(plot_flux, 98) - np.percentile(plot_flux, 2)
+        vav["amp_overshoot"] = float(np.ptp(m_v) / rng_v) if rng_v > 0 else np.nan
+    model_min_rel_flux = np.nan
+    if result is not None and len(plot_mjd) >= RELIABLE_MIN_POINTS:
+        A_ = _fourier_design((plot_mjd % result["period2"]) / result["period2"], DISAMBIGUATION_N_HARM)
+        coef_, *_ = np.linalg.lstsq(A_ / plot_ferr[:, None], plot_flux / plot_ferr, rcond=None)
+        model_min_rel_flux = float((_fourier_design(np.linspace(0, 1, 300), DISAMBIGUATION_N_HARM) @ coef_).min())
+    max_visit_motion_px = np.nan
+    if {"ra", "dec"} <= set(clean_track.columns) and clean_track["ra"].notna().any():
+        mv = []
+        for _, gv in clean_track.groupby("visit"):
+            r0, d0 = np.radians(gv["ra"].values), np.radians(gv["dec"].values)
+            ok_ = np.isfinite(r0) & np.isfinite(d0)
+            if ok_.sum() >= 2:
+                i, j = np.argmin(gv["mjd"].values[ok_]), np.argmax(gv["mjd"].values[ok_])
+                c_ = (np.sin(d0[ok_][i]) * np.sin(d0[ok_][j])
+                      + np.cos(d0[ok_][i]) * np.cos(d0[ok_][j]) * np.cos(r0[ok_][i] - r0[ok_][j]))
+                mv.append(np.degrees(np.arccos(np.clip(c_, -1, 1))) * 3600 / TESS_PIXEL_ARCSEC)
+        max_visit_motion_px = float(max(mv)) if mv else np.nan
+    fold_min_upper = np.nan                       # min over bins of (bin mean + 1 standard error)
+    # significance of the binned fold's range: (highest - lowest bin mean) / sqrt(SEM_high^2 + SEM_low^2), SEM =
+    # bin scatter / sqrt(n). Grows with the points per bin, so a faint object with many points can still score
+    # high, unlike amp_snr (amplitude over the per-point error). Pure noise gives ~2.5 (range of 15 bins), more
+    # after the periodogram picks its best period.
+    bin_range_sig = fold_vn = fold_jag = np.nan
+    if result is not None and len(plot_mjd) >= RELIABLE_MIN_POINTS:
+        b_ = np.clip((((plot_mjd % result["period2"]) / result["period2"]) * FOLD_N_BINS).astype(int), 0, FOLD_N_BINS - 1)
+        bins_ = [(plot_flux[b_ == k].mean(), plot_flux[b_ == k].std(ddof=1) / np.sqrt((b_ == k).sum()))
+                 for k in range(FOLD_N_BINS) if (b_ == k).sum() >= 2]
+        ups = [m + s for m, s in bins_]
+        fold_min_upper = float(min(ups)) if ups else np.nan
+        if len(bins_) >= 2:
+            hi_, lo_ = max(bins_), min(bins_)
+            den_ = np.hypot(hi_[1], lo_[1])
+            bin_range_sig = float((hi_[0] - lo_[0]) / den_) if den_ > 0 else np.nan
+        # smoothness of the binned fold (circular: the last bin neighbours the first), what the eye reads on faint
+        # objects -- a real signal changes gradually from bin to bin, systematics jump.
+        #   fold_vn:  von Neumann ratio sum(step^2) / (2 sum((m - mean)^2)); ~1 for noise, ~0.33 for a smooth
+        #             double-peaked curve over 15 bins, >= 1 for a jagged one. Independent of the error bars.
+        #   fold_jag: sum(step^2) / sum(SEM_k^2 + SEM_k+1^2); ~1 when the steps are what the errors allow (smooth or
+        #             flat), >> 1 when bins jump more than their errors permit.
+        if len(bins_) >= 3:
+            m_ = np.array([m for m, _ in bins_]); s_ = np.array([s for _, s in bins_])
+            st_ = np.diff(np.append(m_, m_[0]))
+            var_ = np.sum((m_ - m_.mean()) ** 2)
+            fold_vn = float(np.sum(st_ ** 2) / (2 * var_)) if var_ > 0 else np.nan
+            den_ = np.sum(s_ ** 2 + np.roll(s_, -1) ** 2)
+            fold_jag = float(np.sum(st_ ** 2) / den_) if den_ > 0 else np.nan
+    fold_positive = bool(np.isfinite(fold_min_upper) and fold_min_upper >= 0)
+    # the periodogram peak (before any harmonic doubling) at the long end of the search range
+    period_at_search_edge = bool(result is not None and
+                                 result["period1"] >= (1 - EDGE_FRAC) * MAX_PERIOD_DAYS)
+    stationary = bool(np.isfinite(max_visit_motion_px) and max_visit_motion_px < STATIONARY_MAX_PX)
+
     # Learned reliability score (see RELIABILITY_* above). Hard physical prerequisites are kept
     # as explicit gates rather than delegated to the model -- a period that was never computed,
     # or was fit to fewer than two observed rotations, is not a measurement regardless of what
@@ -966,7 +1134,7 @@ def plot_asteroid(designation, track, outpath, h_mag=None, sbdb_entry=None):
             n_visits=n_visits, n_sectors=n_sectors, baseline_hr=baseline_hr,
             n_outliers_rejected=result["n_rejected"], frac_points_stacked=frac_stacked,
             phase_angle_range_deg=phase_angle_range, median_n_stack=median_n_stack,
-            n_phase_coverings=n_phase_coverings))
+            n_phase_coverings=n_phase_coverings, fold_vn=fold_vn))
 
     prereq = bool(
         result is not None
@@ -977,9 +1145,11 @@ def plot_asteroid(designation, track, outpath, h_mag=None, sbdb_entry=None):
         # v4 out-of-distribution floors -- see RELIABILITY_MIN_POINTS_FLOOR above
         and len(clean_track) >= RELIABILITY_MIN_POINTS_FLOOR
         and aov_F >= RELIABILITY_MIN_AOVF_FLOOR
+        and (fold_positive or stationary)
+        and not period_at_search_edge
     )
     if np.isfinite(rel_score):
-        is_reliable = bool(prereq and rel_score >= RELIABILITY_SCORE_MIN)
+        is_reliable = bool(prereq and rel_score >= reliability_threshold())
     else:
         # no model available -- fall back to the legacy branch rule so the run still completes
         is_reliable = bool(prereq and branch_is_reliable(
@@ -1134,6 +1304,12 @@ def plot_asteroid(designation, track, outpath, h_mag=None, sbdb_entry=None):
                 aov_F=aov_F, amp_snr=amp_snr, loo_worst_chi2=loo_worst_chi2,
                 n_phase_coverings=n_phase_coverings, reliability_score=rel_score,
                 is_reliable=is_reliable,
+                model_min_rel_flux=model_min_rel_flux,
+                fold_min_upper=fold_min_upper, bin_range_sig=bin_range_sig, fold_vn=fold_vn, fold_jag=fold_jag,
+                n_preclipped=n_preclipped,
+                **vav,
+                period_at_search_edge=period_at_search_edge,
+                max_visit_motion_px=max_visit_motion_px,
                 double_peaked=(result["double_peaked"] if result else None),
                 diameter_km_real=real_diam, albedo_real=real_albedo,
                 spec_type=spec_type, published_rot_per_hr=pub_rot_per,

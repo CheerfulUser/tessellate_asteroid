@@ -51,10 +51,10 @@ POPULATION_HEADING = 'The population'
 
 # Figure captions, keyed by the image file they belong to.
 CAPTIONS = {
-    'period_hist.png': """Rotation periods: {long:,} objects turn more slowly than once a day,
-        the regime ground-based photometry struggles to close.""",
-    'spin_size.png': """Spin rate vs size: Only 21 objects sit above the 2.2 hour spin barrier is where a loosely bound
-        rubble pile would fly apart.""",
+    'period_hist.png': """Rotation periods: {pop_n_long:,} of {pop_n_reliable:,} objects turn more slowly than once
+        a day, the regime ground-based photometry struggles to close.""",
+    'spin_size.png': """Spin rate vs size: only {pop_n_fast_sized} objects with a known size sit above the 2.2 hour
+        spin barrier, where a loosely bound rubble pile would fly apart.""",
     'amplitude_period.png': """Amplitude vs period: Larger amplitudes imply more extreme aspect ratios.""",
     'orbital_elements.png': """Orbital parameters: The dashed lines are Jupiter
         mean-motion resonances, which clear the Kirkwood gaps; clumps are collisional families.

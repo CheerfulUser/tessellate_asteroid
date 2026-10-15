@@ -95,6 +95,17 @@ COARSE_STARTS = int(os.environ.get("ITER_COARSE_STARTS", N_PERIOD_STARTS))
 # right pole in the top few, not rank it first (0 = off). Loreley under RANK_STOP 1e-6 + 1 coarse start fell
 # into the 7.22474 h minimum (chi2 0.00070 vs 0.00058).
 CONVERGE_TOP = int(os.environ.get("ITER_CONVERGE_TOP", 0))
+# Speed-ups for the pole ranking (all off by default; validated on the occultation objects before use):
+#   TESS_THIN    ranking fits use every k-th TESS point of each session (10-min frames oversample hours-long
+#                rotations; thinning drops points without averaging the signal away), with their weights
+#                multiplied by k so the TESS total is unchanged; the period grid, final and mirror fits use all
+#   WARM_REFINE  refinement poles start their TESS-only and weighted fits from their seed pole's shape
+#   REUSE_STARTS refinement poles take their seed pole's starting periods instead of rescanning
+#   SCAN_COARSE  the period scan runs on every f-th step, then at full resolution around its best minima
+TESS_THIN = int(os.environ.get("ITER_TESS_THIN", 1))
+WARM_REFINE = os.environ.get("ITER_WARM_REFINE", "0") == "1"
+REUSE_STARTS = os.environ.get("ITER_REUSE_STARTS", "0") == "1"
+SCAN_COARSE = int(os.environ.get("ITER_SCAN_COARSE", 1))
 MODEL_CHECK_TOL = 1e-4                            # max |ours - convexinv| on block-normalised TESS model
 
 
@@ -537,27 +548,44 @@ def atlas_scan(A, N, lam, bet, per_hr, jd0, phi0):
     dt = c["atlas_jd"] - c["tess_mid"]
     rows = np.arange(len(dt))
     Q, y_obs, sw = c["atlas_Q"], c["atlas_m"], c["sparse_sw"]
-    rms, best = [], (np.inf, None)
-    for u in np.array_split(c["u_grid"], max(1, len(c["u_grid"]) // 500)):
-        x = ((phi_mid + 2 * np.pi * dt[None, :] / (P0 * (1 + u[:, None]))) % (2 * np.pi)) / (2 * np.pi) * N_PHI
-        i0 = np.floor(x).astype(int) % N_PHI
-        f = x - np.floor(x)
-        y = sw * (y_obs[None, :] - (mag[rows, i0] * (1 - f) + mag[rows, (i0 + 1) % N_PHI] * f))
-        # weighted least squares, sqrt(w) scaled: |r|^2 = |y|^2 - |y Q|^2 (Q orthonormal), so the
-        # residual matrix itself is formed only at the chunk's best period
-        rr = np.sqrt(np.maximum(np.einsum("ij,ij->i", y, y) - np.sum((y @ Q) ** 2, axis=1), 0) / np.sum(sw ** 2))
-        j = int(np.argmin(rr))
-        if rr[j] < best[0]:
-            best = (rr[j], (y[j] - (y[j] @ Q) @ Q.T) / sw)    # unscaled residuals at the best period
-        rms.append(rr)
-    rms = np.concatenate(rms)
+    ug = c["u_grid"]
+    rms, best = np.full(len(ug), np.inf), [np.inf, None]
+
+    def evaluate(idx):
+        for part in np.array_split(idx, max(1, len(idx) // 500)):
+            u = ug[part]
+            x = ((phi_mid + 2 * np.pi * dt[None, :] / (P0 * (1 + u[:, None]))) % (2 * np.pi)) / (2 * np.pi) * N_PHI
+            i0 = np.floor(x).astype(int) % N_PHI
+            f = x - np.floor(x)
+            y = sw * (y_obs[None, :] - (mag[rows, i0] * (1 - f) + mag[rows, (i0 + 1) % N_PHI] * f))
+            # weighted least squares, sqrt(w) scaled: |r|^2 = |y|^2 - |y Q|^2 (Q orthonormal), so the
+            # residual matrix itself is formed only at the chunk's best period
+            rr = np.sqrt(np.maximum(np.einsum("ij,ij->i", y, y) - np.sum((y @ Q) ** 2, axis=1), 0) / np.sum(sw ** 2))
+            j = int(np.argmin(rr))
+            if rr[j] < best[0]:
+                best[:] = [rr[j], (y[j] - (y[j] @ Q) @ Q.T) / sw]    # unscaled residuals at the best period
+            rms[part] = rr
+
+    if SCAN_COARSE > 1:
+        # every f-th step, then full resolution within f steps of the coarse minima (3x as many as the
+        # starting periods needed, so a minimum the coarse pass ranks low still gets refined)
+        coarse = np.arange(0, len(ug), SCAN_COARSE)
+        evaluate(coarse)
+        rc = rms[coarse]
+        lc = np.where((rc[1:-1] <= rc[:-2]) & (rc[1:-1] <= rc[2:]))[0] + 1
+        seeds = coarse[lc[np.argsort(rc[lc])][:3 * N_PERIOD_STARTS]]
+        fine = np.unique(np.concatenate([np.arange(max(q - SCAN_COARSE, 0), min(q + SCAN_COARSE + 1, len(ug)))
+                                         for q in seeds] or [coarse]))
+        evaluate(np.setdiff1d(fine, coarse))
+    else:
+        evaluate(np.arange(len(ug)))
     i = int(np.argmin(rms))
     per_src = {s_: float(np.sqrt(np.mean(best[1][m_] ** 2))) for s_, m_ in c["src_masks"].items()}
     # starting periods for the weighted fits: the best local minima of the scan, at least half an
     # alias step (one extra cycle over the data span, du = P / T) apart. convexinv's optimiser stays
     # in the minimum nearest its start (Loreley: within 3e-5 h), and the TESS-only shape can rank
     # the true minimum below an alias, so one start is not enough
-    loc = np.where((rms[1:-1] <= rms[:-2]) & (rms[1:-1] <= rms[2:]))[0] + 1
+    loc = np.where(np.isfinite(rms[1:-1]) & (rms[1:-1] <= rms[:-2]) & (rms[1:-1] <= rms[2:]))[0] + 1
     cands = []
     for j in loc[np.argsort(rms[loc])]:
         if all(abs(c["u_grid"][j] - c["u_grid"][q]) > 0.5 * c["du_alias"] for q in cands):
@@ -565,18 +593,22 @@ def atlas_scan(A, N, lam, bet, per_hr, jd0, phi0):
         if len(cands) == N_PERIOD_STARTS:
             break
     starts = [float(per_hr * (1 + c["u_grid"][j])) for j in cands]
-    return float(rms[i]), float(per_hr * (1 + c["u_grid"][i])), float(np.median(rms)), per_src, starts
+    return float(rms[i]), float(per_hr * (1 + c["u_grid"][i])), float(np.median(rms[np.isfinite(rms)])), per_src, starts
 
 
 def pole_step(job):
-    """TESS-only shape at a fixed pole, then its ATLAS score."""
-    k, lam, bet = job
+    """TESS-only shape at a fixed pole, then its ATLAS score. job = (k, lam, bet[, seed]): a refinement pole
+    carries its seed pole's result, for WARM_REFINE (start from the seed's TESS-only shape) and
+    REUSE_STARTS (take the seed's starting periods instead of scanning)."""
+    k, lam, bet = job[:3]
+    seed = job[3] if len(job) > 3 else None
     c = _CTX
     if hasattr(os, "sched_setaffinity"):
         os.sched_setaffinity(0, c["cpus"])
-    cp, sp, pp, fp = (f"{c['work']}/it{k}_{x}.txt" for x in "cspf")
+    cp, sp, pp, fp, cf = (f"{c['work']}/it{k}_{x}.txt" for x in ("c", "s", "p", "f", "coef"))
     write_control(cp, lam, bet, c["period_hr"], pole_free=False, phase_free=False, stop=RANK_STOP)
-    res, why = bs.run_pole(cp, c["lcs_tess"], sp, pp, fp)
+    warm = seed.get("coef_tess") if (seed and WARM_REFINE) else None
+    res, why = run_ci(cp, c["lcs_tess"], sp, pp, fp, (["-i", warm] if warm else []) + ["-c", cf])
     out = dict(k=k, lam=lam, bet=bet, pid=os.getpid(),
                n_cpus_allowed=len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None)
     if res is None:
@@ -586,9 +618,12 @@ def pole_step(job):
     dev = model_check(A, N, lam, bet, tok, fp)
     out.update(period_tess_hr=float(tok[2]), rotation_t0_jd=float(tok[3]),
                rotation_phi0_rad=float(np.radians(float(tok[4]))), model_check=dev,
-               chi2_tess=chi2_of(fp, c["lcs_tess"]), shape=sp)
+               chi2_tess=chi2_of(fp, c["lcs_tess"]), shape=sp, coef_tess=cf, seed_k=seed["k"] if seed else None)
     if dev > MODEL_CHECK_TOL:
         return dict(out, error=f"forward model differs from convexinv by {dev:.2e}")
+    if seed and REUSE_STARTS and seed.get("period_starts_hr"):
+        return dict(out, atlas_rms=np.nan, period_atlas_hr=seed["period_atlas_hr"], atlas_rms_median=np.nan,
+                    period_starts_hr=seed["period_starts_hr"], starts_from_seed=seed["k"])
     rms, per, med, per_src, starts = atlas_scan(A, N, lam, bet, float(tok[2]), float(tok[3]), np.radians(float(tok[4])))
     return dict(out, atlas_rms=rms, period_atlas_hr=per, atlas_rms_median=med, period_starts_hr=starts,
                 **{f"rms_{s_}": v for s_, v in per_src.items()})
@@ -632,10 +667,13 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     final_extra = (["-y", 0, 1] if getattr(a, "yorp", False) else []) + \
         (["-r", a.robust, 2] if getattr(a, "robust", None) else [])
     lcs_tess = f"{work}/lcs_tess.txt"
-    bs.write_lcs(df, sv, ev, blocks, lcs_tess)
+    blocks_r = [b[::TESS_THIN] for b in blocks]          # ranking TESS points (all of them when TESS_THIN 1)
+    bs.write_lcs(df, sv, ev, blocks_r, lcs_tess)
+    order_r = np.concatenate(blocks_r)
+    jd_r = bs.lt_jd(df, ev)[order_r]
+    edges = np.cumsum([0] + [len(b) for b in blocks_r])
     order = np.concatenate(blocks)
     jd = bs.lt_jd(df, ev)[order]
-    edges = np.cumsum([0] + [len(b) for b in blocks])
     # widest period range the TESS fit could be off by: one cycle over the longest visit
     t_vis = max(np.ptp(df.mjd.values[b]) for b in blocks)
     atlas_jd = atlas.MJD_lc.values + 2400000.5
@@ -670,9 +708,9 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     w0 /= w0.mean()
     sw = np.sqrt(w0)
     X = np.column_stack(cols) * sw[:, None]
-    _CTX.update(work=work, period_hr=a.period_hr, lcs_tess=lcs_tess, tess_jd=jd,
-                tess_sv=sv[order], tess_ev=ev[order],
-                tess_slices=[slice(edges[i], edges[i + 1]) for i in range(len(blocks))],
+    _CTX.update(work=work, period_hr=a.period_hr, lcs_tess=lcs_tess, tess_jd=jd_r,
+                tess_sv=sv[order_r], tess_ev=ev[order_r],
+                tess_slices=[slice(edges[i], edges[i + 1]) for i in range(len(blocks_r))],
                 tess_mid=tess_mid, atlas_jd=atlas_jd, atlas_sv=sv_a, atlas_ev=ev_a,
                 atlas_m=atlas.m_o.values, atlas_Q=np.linalg.qr(X)[0], u_grid=np.linspace(-half, half, n_u),
                 sparse_sw=sw, src_masks=src_masks, du_alias=du_alias)
@@ -682,7 +720,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     ncpu = int(os.environ.get("ITER_NPROC", len(cpus)))   # local runs: leave the machine headroom
     _CTX["cpus"] = cpus
     print(f"  {ncpu} workers, cpus allowed {sorted(cpus)}", flush=True)
-    done, k, lcs_w, wmeta = [], 0, None, None
+    done, k, lcs_w, lcs_w_full, wmeta = [], 0, None, None, None
     n_t, n_a = len(order), len(atlas)
     src_masks = _CTX["src_masks"]
     score_name = f"weighted chi2 ({weights})" if weights else "ATLAS rms"
@@ -690,7 +728,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     with mp.get_context("fork").Pool(ncpu) as pool:
         poles = fib_poles(FIB_N)
         for level in range(len(REFINE) + 1):
-            jobs = [(k + i, l, b) for i, (l, b) in enumerate(poles)]
+            jobs = [(k + i,) + tuple(p) for i, p in enumerate(poles)]     # (k, lam, bet[, seed])
             k += len(jobs)
             new = []
             for r in pool.imap_unordered(pole_step, jobs):
@@ -719,8 +757,19 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                     t_sig2 = np.where(np.isfinite(t_sig2), t_sig2, np.nanmedian(t_sig2))
                     floor_t = float(np.sqrt(max(var_t - np.median(t_sig2), 1e-12)))
                     w_t, w_s = dataset_weights(weights, 1 / (t_sig2 + floor_t ** 2), w_abs)
-                    lcs_w = f"{work}/lcs_weighted.txt"
-                    write_lcs(lcs_w, *tess_atlas_rows, w_tess=w_t, w_sparse=w_s)
+                    lcs_w_full = f"{work}/lcs_weighted.txt"
+                    write_lcs(lcs_w_full, *tess_atlas_rows, w_tess=w_t, w_sparse=w_s)
+                    lcs_w = lcs_w_full
+                    if TESS_THIN > 1:                     # ranking: every k-th TESS point per session, weight x k
+                        rows_t = tess_atlas_rows[0]
+                        seen = {}
+                        pos = np.empty(len(rows_t), int)  # each row's position within its session
+                        for i, r_ in enumerate(rows_t):
+                            pos[i] = seen.get(r_[0], 0); seen[r_[0]] = pos[i] + 1
+                        keep_t = pos % TESS_THIN == 0
+                        lcs_w = f"{work}/lcs_weighted_thin.txt"
+                        write_lcs(lcs_w, [r_ for r_, k_ in zip(rows_t, keep_t) if k_], tess_atlas_rows[1],
+                                  *tess_atlas_rows[2:], w_tess=w_t[keep_t] * TESS_THIN, w_sparse=w_s)
                     tot = {s_: float(w_s[m_].sum()) for s_, m_ in src_masks.items()}
                     wmeta = dict(scheme=weights, sigma_tess=float(np.sqrt(var_t)), model_floor_tess=floor_t,
                                  tess_median_rel_err=float(np.sqrt(np.median(t_sig2))),
@@ -734,6 +783,8 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                 by_k = {r["k"]: r for r in done}
                 n_starts = COARSE_STARTS if level == 0 else N_PERIOD_STARTS
                 jobs_w = [(r["k"], r["lam"], r["bet"], (r["period_starts_hr"] or [r["period_atlas_hr"]])[:n_starts], lcs_w)
+                          + ((by_k[r["seed_k"]]["coef_w"],) if WARM_REFINE and r.get("seed_k") is not None
+                             and by_k[r["seed_k"]].get("coef_w") else ())
                           for r in new if "error" not in r]
                 for jr in pool.imap_unordered(joint_step, jobs_w):
                     by_k[jr["k"]].update(jr)
@@ -754,21 +805,30 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                     seeds.append(r)
                 if len(seeds) == n_keep:
                     break
-            poles = [p for s in seeds for p in neighbours(s["lam"], s["bet"], r_deg)
+            poles = [(p[0], p[1], s) for s in seeds for p in neighbours(s["lam"], s["bet"], r_deg)
                      if min(sep_deg(p, (d["lam"], d["bet"])) for d in done) > r_deg / 2]
 
     ok = sorted((r for r in done if "error" not in r and "joint_error" not in r), key=score)
     if weights and CONVERGE_TOP:
-        top = ok[:CONVERGE_TOP]
+        # the best pole of each of the CONVERGE_TOP best separate sky regions (> REGION_SEP_DEG apart): a plain
+        # top-N is filled with refinement neighbours of one region (Loreley: all 10 near (358,-16), while the
+        # region holding the true solution, (181,+28), was never refitted)
+        top = []
+        for r in ok:
+            if all(sep_deg((r["lam"], r["bet"]), (q["lam"], q["bet"])) > REGION_SEP_DEG for q in top):
+                top.append(r)
+            if len(top) == CONVERGE_TOP:
+                break
         with mp.get_context("fork").Pool(ncpu) as pool:
             res_c = pool.map(joint_step, [(r["k"] + 500000, r["lam"], r["bet"],
-                                           r["period_starts_hr"] or [r["period_atlas_hr"]], lcs_w) for r in top])
+                                           r["period_starts_hr"] or [r["period_atlas_hr"]], lcs_w_full) for r in top])
         for r, jr in zip(top, res_c):
             if "joint_error" in jr:
                 continue
             r["chi2_w_ranking"] = r["chi2_w"]
             r.update({kk: v for kk, v in jr.items() if kk != "k"})
-        ok = sorted(ok, key=score)
+        # with TESS_THIN the rest still carry thinned-data scores, so only the refitted top are compared
+        ok = sorted(top, key=score) + [r for r in ok if r not in top] if TESS_THIN > 1 else sorted(ok, key=score)
         print(f"  converged top {len(top)}: best " + ", ".join(f"({r['lam']:.0f},{r['bet']:+.0f}) {score(r):.5f}"
                                                             for r in ok[:3]), flush=True)
     if weights:
@@ -783,7 +843,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
         n_g = 4 * FINAL_GRID_ALIASES
         with mp.get_context("fork").Pool(ncpu) as pool:
             jobs_g = [(r["k"] + 100000 * (g + 1), r["lam"], r["bet"],
-                       [r["period_joint_hr"] * (1 + du_alias * (g - n_g) / 4)], lcs_w, r["coef_w"])
+                       [r["period_joint_hr"] * (1 + du_alias * (g - n_g) / 4)], lcs_w_full, r["coef_w"])
                       for r in seeds for g in range(2 * n_g + 1)]
             res_g = pool.map(joint_step, jobs_g)
         for r, chunk in zip(seeds, [res_g[i:i + 2 * n_g + 1] for i in range(0, len(res_g), 2 * n_g + 1)]):
@@ -792,11 +852,14 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
                 continue
             g_best = min(good, key=lambda x: x["chi2_w"])
             r["final_grid"] = [(x["period_start_hr"], x["period_joint_hr"], x["chi2_w"]) for x in good]
-            if g_best["chi2_w"] < r["chi2_w"]:
+            if TESS_THIN > 1:                             # ranking chi2 was on thinned data: the grid
+                r["chi2_w_ranking"] = r["chi2_w"]         # (which includes the ranking period) decides
+                r.update({kk: v for kk, v in g_best.items() if kk not in ("k", "period_tries")})
+            elif g_best["chi2_w"] < r["chi2_w"]:
                 print(f"  period grid at ({r['lam']:.0f},{r['bet']:+.0f}): {r['period_joint_hr']:.6f} -> "
                       f"{g_best['period_joint_hr']:.6f} h, chi2 {r['chi2_w']:.5f} -> {g_best['chi2_w']:.5f}", flush=True)
                 r.update({kk: v for kk, v in g_best.items() if kk not in ("k", "period_tries")})
-        ok = sorted(ok, key=score)
+        ok = sorted(seeds, key=score) + [r for r in ok if r not in seeds] if TESS_THIN > 1 else sorted(ok, key=score)
     best = ok[0]
     far = [r for r in ok if sep_deg((r["lam"], r["bet"]), (best["lam"], best["bet"])) > 45]
     alt = far[0] if far else None
@@ -809,7 +872,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     # final fit with the pole free, from the best pole: unweighted joint polish in the ATLAS-only
     # ranking, the same weighted objective as the ranking otherwise
     cp, sp, pp, fp, ef = (f"{work}/final_{x}.txt" for x in ("c", "s", "p", "f", "err"))
-    lcs_final = lcs_w if weights else lcs_joint
+    lcs_final = lcs_w_full if weights else lcs_joint
     write_control(cp, best["lam"], best["bet"], best.get("period_joint_hr", best["period_atlas_hr"]))
     final_opts = ["-e", ef] + (["-i", best["coef_w"]] if best.get("coef_w") else []) + final_extra
     res, why = run_ci(cp, lcs_final, sp, pp, fp, final_opts)
@@ -819,7 +882,7 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
     else:
         tok = open(pp).read().split()
         joint = dict(lam=res[0], bet=res[1], period_hr=res[2],
-                     chi2=chi2_weighted(fp, lcs_w, pp)[0] if weights else chi2_of(fp, lcs_joint), shape=sp,
+                     chi2=chi2_weighted(fp, lcs_w_full, pp)[0] if weights else chi2_of(fp, lcs_joint), shape=sp,
                      rotation_t0_jd=float(tok[3]), rotation_phi0_rad=float(np.radians(float(tok[4]))),
                      uncertainties=read_errors(ef))
         print(f"JOINT-POLISH {a.designation}: pole ({res[0]:.1f},{res[1]:+.1f}) P {res[2]:.7f} h "
@@ -832,17 +895,17 @@ def run_iterative(a, df, sv, ev, blocks, tess_rows, atlas, sv_a, ev_a, info, wor
         ml, mb = (joint["lam"] + 180.0) % 360.0, joint["bet"]
         n_g = 4 * FINAL_GRID_ALIASES
         with mp.get_context("fork").Pool(ncpu) as pool:
-            res_m = pool.map(joint_step, [(900000 + g, ml, mb, [joint["period_hr"] * (1 + du_alias * (g - n_g) / 4)], lcs_w)
+            res_m = pool.map(joint_step, [(900000 + g, ml, mb, [joint["period_hr"] * (1 + du_alias * (g - n_g) / 4)], lcs_w_full)
                                           for g in range(2 * n_g + 1)])
         good = [x for x in res_m if "joint_error" not in x]
         if good:
             m_best = min(good, key=lambda x: x["chi2_w"])
             cp, sp, pp, fp, ef = (f"{work}/mirror_{x}.txt" for x in ("c", "s", "p", "f", "err"))
             write_control(cp, ml, mb, m_best["period_joint_hr"])
-            res, why = run_ci(cp, lcs_w, sp, pp, fp, ["-e", ef, "-i", m_best["coef_w"]] + final_extra)
+            res, why = run_ci(cp, lcs_w_full, sp, pp, fp, ["-e", ef, "-i", m_best["coef_w"]] + final_extra)
             if res is not None:
                 tok = open(pp).read().split()
-                c2 = chi2_weighted(fp, lcs_w, pp)[0]
+                c2 = chi2_weighted(fp, lcs_w_full, pp)[0]
                 mirror = dict(lam=res[0], bet=res[1], period_hr=res[2], chi2=c2, chi2_ratio_to_best=c2 / joint["chi2"],
                               rotation_t0_jd=float(tok[3]), rotation_phi0_rad=float(np.radians(float(tok[4]))), shape=sp,
                               uncertainties=read_errors(ef))

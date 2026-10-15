@@ -15,6 +15,8 @@ export ASTEROID_OUTDIR_SUFFIX=${ASTEROID_OUTDIR_SUFFIX:-_store}
 export ASTEROID_STORE_NTASKS=${ASTEROID_STORE_NTASKS:-1000}
 export ASTEROID_SAVE_PLOTS=0
 export ASTEROID_POINT_MODE=${ASTEROID_POINT_MODE:-raw}
+# period search to 960 h: objects pinned at the old 240 h limit had real peaks at 491-659 h
+export ASTEROID_MAX_PERIOD_DAYS=${ASTEROID_MAX_PERIOD_DAYS:-40}
 export PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 cd /fred/oz335/rridden/asteroids
 /home/rridden/miniconda3/bin/python3 sector_report_pipeline.py
